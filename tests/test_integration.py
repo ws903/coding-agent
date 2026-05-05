@@ -1,6 +1,4 @@
 # tests/test_integration.py
-import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest

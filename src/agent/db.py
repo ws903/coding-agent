@@ -119,8 +119,13 @@ class AgentDB:
         return [dict(row) for row in rows]
 
     def save_edit(
-        self, conv_id: str, step_id: int, file_path: str, edit_type: str,
-        before: str | None, after: str | None,
+        self,
+        conv_id: str,
+        step_id: int,
+        file_path: str,
+        edit_type: str,
+        before: str | None,
+        after: str | None,
     ) -> None:
         self.conn.execute(
             "INSERT INTO edits (conv_id, step_id, file_path, edit_type, before, after) "

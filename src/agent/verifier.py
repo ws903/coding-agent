@@ -1,4 +1,4 @@
-from agent.models import CommandResult, VerificationResult
+from agent.models import VerificationResult
 from agent.sandbox import Sandbox
 
 

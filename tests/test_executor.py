@@ -1,12 +1,10 @@
-import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 
 from agent.executor import Executor
 from agent.llm_client import LLMClient
-from agent.models import Step, FileEdit
+from agent.models import Step
 from agent.tools import FileTools
 
 
@@ -67,7 +65,9 @@ def executor(mock_client, tools):
 @pytest.mark.asyncio
 async def test_execute_search_replace(executor, mock_client, tmp_path):
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "app.py").write_text('@app.route("/")\ndef index():\n    return "hello"\n')
+    (tmp_path / "src" / "app.py").write_text(
+        '@app.route("/")\ndef index():\n    return "hello"\n'
+    )
     mock_client.chat = AsyncMock(return_value=MOCK_SEARCH_REPLACE_RESPONSE)
 
     step = Step(id=1, action="Add health endpoint", files_needed=["src/app.py"])
@@ -103,7 +103,9 @@ async def test_execute_rewrite(executor, mock_client, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_execute_includes_file_contents_in_prompt(executor, mock_client, tmp_path):
+async def test_execute_includes_file_contents_in_prompt(
+    executor, mock_client, tmp_path
+):
     (tmp_path / "code.py").write_text("x = 1\n")
     mock_client.chat = AsyncMock(return_value="no edits")
 

@@ -1,9 +1,8 @@
 # src/agent/tools.py
 import fnmatch
-import re
 from pathlib import Path
 
-from agent.sandbox import Sandbox, SecurityError
+from agent.sandbox import Sandbox
 
 
 class FileTools:
@@ -69,14 +68,14 @@ class FileTools:
                     else:
                         indented_replace.append(indent + rline.lstrip())
                 result_lines = (
-                    content_lines[:i] + indented_replace + content_lines[i + len(search_lines) :]
+                    content_lines[:i]
+                    + indented_replace
+                    + content_lines[i + len(search_lines) :]
                 )
                 return "".join(result_lines)
         return None
 
-    def list_files(
-        self, directory: str = ".", pattern: str | None = None
-    ) -> list[str]:
+    def list_files(self, directory: str = ".", pattern: str | None = None) -> list[str]:
         dir_path = self.sandbox.validate_path(directory)
         if not dir_path.is_dir():
             return []
@@ -85,18 +84,22 @@ class FileTools:
             if item.is_file():
                 rel = str(item.relative_to(self.project_root))
                 if pattern is None or fnmatch.fnmatch(item.name, pattern):
-                    if not any(part.startswith(".") for part in item.relative_to(self.project_root).parts):
+                    if not any(
+                        part.startswith(".")
+                        for part in item.relative_to(self.project_root).parts
+                    ):
                         files.append(rel)
         return files
 
-    def search_text(
-        self, query: str, path_filter: str | None = None
-    ) -> list[dict]:
+    def search_text(self, query: str, path_filter: str | None = None) -> list[dict]:
         results = []
         for item in sorted(self.project_root.rglob("*")):
             if not item.is_file():
                 continue
-            if any(part.startswith(".") for part in item.relative_to(self.project_root).parts):
+            if any(
+                part.startswith(".")
+                for part in item.relative_to(self.project_root).parts
+            ):
                 continue
             if path_filter and not fnmatch.fnmatch(item.name, path_filter):
                 continue
@@ -106,9 +109,11 @@ class FileTools:
                 continue
             for i, line in enumerate(lines, 1):
                 if query in line:
-                    results.append({
-                        "file": str(item.relative_to(self.project_root)),
-                        "line": i,
-                        "content": line.strip(),
-                    })
+                    results.append(
+                        {
+                            "file": str(item.relative_to(self.project_root)),
+                            "line": i,
+                            "content": line.strip(),
+                        }
+                    )
         return results

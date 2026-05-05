@@ -72,7 +72,9 @@ def test_edit_file_no_match(tmp_path):
 def test_edit_file_whitespace_normalized(tmp_path):
     (tmp_path / "code.py").write_text("    def hello():\n        return 'hi'\n")
     tools = make_tools(tmp_path)
-    success = tools.edit_file("code.py", "def hello():\n    return 'hi'", "def hello():\n    return 'bye'")
+    success = tools.edit_file(
+        "code.py", "def hello():\n    return 'hi'", "def hello():\n    return 'bye'"
+    )
     assert success
     content = (tmp_path / "code.py").read_text()
     assert "bye" in content

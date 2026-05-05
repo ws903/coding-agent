@@ -2,7 +2,7 @@
 from importlib import resources
 
 from agent.llm_client import LLMClient
-from agent.models import Step, ExecutionResult, FileEdit
+from agent.models import Step, ExecutionResult
 from agent.parser import parse_edits
 from agent.tools import FileTools
 
@@ -17,9 +17,7 @@ class Executor:
         self.tools = tools
         self.system_prompt = _load_prompt()
 
-    async def execute(
-        self, step: Step, errors: str | None = None
-    ) -> ExecutionResult:
+    async def execute(self, step: Step, errors: str | None = None) -> ExecutionResult:
         file_contents = self._gather_files(step.files_needed)
         user_content = f"## Step\n{step.action}\n"
 

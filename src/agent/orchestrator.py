@@ -3,8 +3,9 @@ from pathlib import Path
 
 from agent.db import AgentDB
 from agent.models import (
-    Plan, Step, ExecutionResult, FileEdit,
-    VerificationResult,
+    Plan,
+    Step,
+    ExecutionResult,
 )
 from agent.planner import Planner
 from agent.executor import Executor
@@ -81,7 +82,11 @@ class Orchestrator:
             plan = await self.planner.replan(task, plan, step.id, error_summary)
             plan_version += 1
             self.db.save_plan(conv_id, plan_version, self._plan_to_text(plan))
-            self.db.add_message(conv_id, "planner", f"Replan v{plan_version}:\n{self._plan_to_text(plan)}")
+            self.db.add_message(
+                conv_id,
+                "planner",
+                f"Replan v{plan_version}:\n{self._plan_to_text(plan)}",
+            )
             step_index = 0
 
         self.db.update_conversation_status(conv_id, "completed")
@@ -115,9 +120,13 @@ class Orchestrator:
                 return True
 
             error_detail = "\n".join(
-                f"{d.cmd}: {d.stderr or d.stdout}" for d in verification.details if d.exit_code != 0
+                f"{d.cmd}: {d.stderr or d.stdout}"
+                for d in verification.details
+                if d.exit_code != 0
             )
-            self.db.add_message(conv_id, "verifier", f"Verification failed:\n{error_detail}")
+            self.db.add_message(
+                conv_id, "verifier", f"Verification failed:\n{error_detail}"
+            )
 
         return False
 
@@ -149,8 +158,12 @@ class Orchestrator:
 
                 after = self.tools.read_file(edit.path)
                 self.db.save_edit(
-                    conv_id, step_id, edit.path, edit.action,
-                    before=before, after=after,
+                    conv_id,
+                    step_id,
+                    edit.path,
+                    edit.action,
+                    before=before,
+                    after=after,
                 )
             except Exception:
                 all_ok = False

@@ -20,8 +20,7 @@ class Planner:
             {
                 "role": "user",
                 "content": (
-                    f"## Task\n{task}\n\n"
-                    f"## Project Context\n{project_context}"
+                    f"## Task\n{task}\n\n## Project Context\n{project_context}"
                 ),
             },
         ]

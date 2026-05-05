@@ -1,12 +1,9 @@
 # src/agent/cli.py
 import argparse
-import asyncio
 import json
-import sys
 from pathlib import Path
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.prompt import Prompt
 
 from agent.db import AgentDB
@@ -29,12 +26,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Local coding agent with planner/executor architecture",
     )
     parser.add_argument("--auto", action="store_true", help="Run in autonomous mode")
-    parser.add_argument("--task", type=str, help="Task description (required for --auto)")
-    parser.add_argument("--max-steps", type=int, default=20, help="Max execution steps")
-    parser.add_argument("--step", action="store_true", help="Approve each step individually")
     parser.add_argument(
-        "--model", type=str, default="qwen3:14b", help="Model name"
+        "--task", type=str, help="Task description (required for --auto)"
     )
+    parser.add_argument("--max-steps", type=int, default=20, help="Max execution steps")
+    parser.add_argument(
+        "--step", action="store_true", help="Approve each step individually"
+    )
+    parser.add_argument("--model", type=str, default="qwen3:14b", help="Model name")
     parser.add_argument(
         "--base-url",
         type=str,
@@ -114,7 +113,9 @@ async def run_interactive(args: argparse.Namespace) -> None:
     project_root = Path(args.project).resolve()
     orch = build_orchestrator(project_root, args.base_url, args.model)
 
-    console.print(f"[bold]Agent v0.1.0[/bold] | Model: {args.model} | Project: {project_root}")
+    console.print(
+        f"[bold]Agent v0.1.0[/bold] | Model: {args.model} | Project: {project_root}"
+    )
     console.print("Type a task or /help for commands.\n")
 
     while True:
@@ -144,12 +145,16 @@ async def run_interactive(args: argparse.Namespace) -> None:
             console.print(f"[red]Unknown command: {user_input}[/red]")
             continue
 
-        result = await orch.run(user_input, mode="interactive", approve_plan=_approve_plan)
+        result = await orch.run(
+            user_input, mode="interactive", approve_plan=_approve_plan
+        )
         status = result["status"]
         if status == "completed":
             console.print("[green]Task completed successfully.[/green]\n")
         elif status == "failed":
-            console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]\n")
+            console.print(
+                f"[red]Task failed: {result.get('reason', 'unknown')}[/red]\n"
+            )
         elif status == "aborted":
             console.print("[yellow]Task aborted.[/yellow]\n")
 
@@ -176,8 +181,10 @@ async def run_autonomous(args: argparse.Namespace) -> int:
 def _show_config(orch: Orchestrator) -> None:
     console.print("[bold]Configuration:[/bold]")
     for key in [
-        "planner_base_url", "planner_model",
-        "executor_base_url", "executor_model",
+        "planner_base_url",
+        "planner_model",
+        "executor_base_url",
+        "executor_model",
         "verify_commands",
     ]:
         val = orch.db.get_config(key, "(not set)")

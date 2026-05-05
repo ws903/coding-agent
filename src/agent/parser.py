@@ -18,14 +18,10 @@ def parse_plan(text: str) -> Plan:
         step_text = match.group(2).strip()
         action = step_text.split("\n")[0].strip()
 
-        files_match = re.search(
-            r"-\s*Files needed:\s*(.+)", step_text
-        )
+        files_match = re.search(r"-\s*Files needed:\s*(.+)", step_text)
         files_needed = []
         if files_match:
-            files_needed = [
-                f.strip() for f in files_match.group(1).split(",")
-            ]
+            files_needed = [f.strip() for f in files_match.group(1).split(",")]
 
         verify_match = re.search(r"-\s*Verify:\s*(.+)", step_text)
         verify_command = verify_match.group(1).strip() if verify_match else None

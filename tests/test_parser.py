@@ -1,5 +1,4 @@
 from agent.parser import parse_plan, parse_edits
-from agent.models import Plan, Step, FileEdit
 
 
 class TestParsePlan:

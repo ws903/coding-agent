@@ -1,7 +1,3 @@
-from pathlib import Path
-
-import pytest
-
 from agent.verifier import Verifier
 from agent.sandbox import Sandbox
 
@@ -17,7 +13,7 @@ def test_verify_passes_when_commands_succeed(tmp_path):
 
 def test_verify_fails_when_command_fails(tmp_path):
     sandbox = Sandbox(tmp_path)
-    verifier = Verifier(sandbox, commands=["python3 -c \"raise SystemExit(1)\""])
+    verifier = Verifier(sandbox, commands=['python3 -c "raise SystemExit(1)"'])
     result = verifier.run()
     assert not result.passed
 
@@ -34,7 +30,7 @@ def test_verify_fails_if_any_command_fails(tmp_path):
     sandbox = Sandbox(tmp_path)
     verifier = Verifier(
         sandbox,
-        commands=["echo ok", "python3 -c \"raise SystemExit(1)\"", "echo ok"],
+        commands=["echo ok", 'python3 -c "raise SystemExit(1)"', "echo ok"],
     )
     result = verifier.run()
     assert not result.passed

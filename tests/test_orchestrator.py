@@ -1,20 +1,24 @@
 # tests/test_orchestrator.py
-import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from agent.orchestrator import Orchestrator
 from agent.models import (
-    Plan, Step, ExecutionResult, FileEdit,
-    VerificationResult, CommandResult,
+    Plan,
+    Step,
+    ExecutionResult,
+    FileEdit,
+    VerificationResult,
+    CommandResult,
 )
 
 
 def make_plan(num_steps=2):
     steps = [
-        Step(id=i + 1, action=f"Step {i + 1}", files_needed=[], verify_command="echo ok")
+        Step(
+            id=i + 1, action=f"Step {i + 1}", files_needed=[], verify_command="echo ok"
+        )
         for i in range(num_steps)
     ]
     return Plan(goal="Test goal", steps=steps)
@@ -57,7 +61,9 @@ def orchestrator(tmp_path):
     mock_tools.read_file = MagicMock(return_value="file contents")
     mock_tools.list_files = MagicMock(return_value=["a.py", "b.py"])
     mock_tools.sandbox = MagicMock()
-    mock_tools.sandbox.run_command = MagicMock(return_value=CommandResult(cmd="echo", exit_code=0, stdout="", stderr=""))
+    mock_tools.sandbox.run_command = MagicMock(
+        return_value=CommandResult(cmd="echo", exit_code=0, stdout="", stderr="")
+    )
 
     mock_db = MagicMock()
     mock_db.create_conversation = MagicMock(return_value="conv123")
@@ -80,25 +86,25 @@ def orchestrator(tmp_path):
 
 @pytest.mark.asyncio
 async def test_run_generates_plan(orchestrator):
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    await orchestrator.run("Fix the bug", mode="autonomous")
     orchestrator.planner.generate_plan.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_run_executes_all_steps(orchestrator):
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    await orchestrator.run("Fix the bug", mode="autonomous")
     assert orchestrator.executor.execute.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_run_verifies_after_each_step(orchestrator):
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    await orchestrator.run("Fix the bug", mode="autonomous")
     assert orchestrator.verifier.run.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_run_applies_file_creates(orchestrator, tmp_path):
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    await orchestrator.run("Fix the bug", mode="autonomous")
     orchestrator.tools.write_file.assert_called()
 
 
@@ -107,8 +113,10 @@ async def test_run_retries_on_verify_failure(orchestrator):
     orchestrator.verifier.run = MagicMock(
         side_effect=[make_verification_fail(), make_verification_pass()] * 2
     )
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
-    assert orchestrator.executor.execute.call_count == 4  # 2 steps x (1 attempt + 1 retry)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    assert (
+        orchestrator.executor.execute.call_count == 4
+    )  # 2 steps x (1 attempt + 1 retry)
 
 
 @pytest.mark.asyncio
@@ -116,7 +124,7 @@ async def test_run_replans_after_two_failures(orchestrator):
     orchestrator.verifier.run = MagicMock(return_value=make_verification_fail())
     orchestrator.planner.replan = AsyncMock(return_value=make_plan(1))
 
-    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    await orchestrator.run("Fix the bug", mode="autonomous")
     assert orchestrator.planner.replan.call_count >= 1
 
 

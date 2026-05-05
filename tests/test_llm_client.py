@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
@@ -39,9 +38,7 @@ def test_build_payload_with_stream(client):
 async def test_chat_returns_content(client):
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "choices": [{"message": {"content": "world"}}]
-    }
+    mock_response.json.return_value = {"choices": [{"message": {"content": "world"}}]}
     mock_response.raise_for_status = MagicMock()
 
     with patch("httpx.AsyncClient") as MockClient:
@@ -59,9 +56,7 @@ async def test_chat_returns_content(client):
 async def test_chat_posts_to_correct_url(client):
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "choices": [{"message": {"content": "ok"}}]
-    }
+    mock_response.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
     mock_response.raise_for_status = MagicMock()
 
     with patch("httpx.AsyncClient") as MockClient:

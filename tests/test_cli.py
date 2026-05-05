@@ -1,8 +1,5 @@
 # tests/test_cli.py
-from unittest.mock import AsyncMock, MagicMock, patch
-from pathlib import Path
 
-import pytest
 
 from agent.cli import build_orchestrator, parse_args
 
