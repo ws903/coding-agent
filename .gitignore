@@ -11,6 +11,7 @@ MANIFEST
 .agent/
 *.db
 .coverage
+coverage.json
 htmlcov/
 .pytest_cache/
 .ruff_cache/
