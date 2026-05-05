@@ -74,7 +74,7 @@ All 80 tests should pass.
 Navigate to any project directory and launch the agent:
 
 ```powershell
-python -m agent --project C:\path\to\your\project
+uv run agent --project C:\path\to\your\project
 ```
 
 The agent starts a REPL. Type a task in natural language:
