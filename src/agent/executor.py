@@ -8,7 +8,11 @@ from agent.tools import FileTools
 
 
 def _load_prompt() -> str:
-    return resources.files("agent.prompts").joinpath("executor.md").read_text()
+    return (
+        resources.files("agent.prompts")
+        .joinpath("executor.md")
+        .read_text(encoding="utf-8")
+    )
 
 
 class Executor:
