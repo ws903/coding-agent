@@ -1,4 +1,7 @@
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from agent.db import AgentDB
 
@@ -83,3 +86,12 @@ def test_update_conversation_status(tmp_path):
     db.update_conversation_status(conv_id, "completed")
     conv = db.get_conversation(conv_id)
     assert conv["status"] == "completed"
+
+
+def test_close(tmp_path):
+    db = make_db(tmp_path)
+    db.close()
+    # After close, attempting to use the connection should raise
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.execute("SELECT 1")
