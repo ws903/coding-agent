@@ -115,3 +115,69 @@ def test_search_text_with_filter(tmp_path):
     tools = make_tools(tmp_path)
     results = tools.search_text("hello", path_filter="*.py")
     assert all("a.py" in r["file"] for r in results)
+
+
+def test_edit_file_not_found(tmp_path):
+    """edit_file raises FileNotFoundError when file doesn't exist."""
+    tools = make_tools(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        tools.edit_file("nonexistent.py", "old", "new")
+
+
+def test_list_files_non_directory(tmp_path):
+    """list_files returns empty list when path is not a directory."""
+    (tmp_path / "afile.txt").write_text("content")
+    tools = make_tools(tmp_path)
+    result = tools.list_files("afile.txt")
+    assert result == []
+
+
+def test_search_text_skips_hidden_dirs(tmp_path):
+    """search_text skips files in hidden directories."""
+    hidden = tmp_path / ".hidden"
+    hidden.mkdir()
+    (hidden / "secret.py").write_text("hello\n")
+    (tmp_path / "visible.py").write_text("hello\n")
+    tools = make_tools(tmp_path)
+    results = tools.search_text("hello")
+    files = [r["file"] for r in results]
+    assert any("visible.py" in f for f in files)
+    assert not any(".hidden" in f for f in files)
+
+
+def test_search_text_path_filter_skips_non_matching(tmp_path):
+    """search_text with path_filter skips non-matching files."""
+    (tmp_path / "a.py").write_text("hello\n")
+    (tmp_path / "b.txt").write_text("hello\n")
+    tools = make_tools(tmp_path)
+    results = tools.search_text("hello", path_filter="*.py")
+    files = [r["file"] for r in results]
+    assert any("a.py" in f for f in files)
+    assert not any("b.txt" in f for f in files)
+
+
+def test_search_text_handles_unicode_decode_error(tmp_path):
+    """search_text skips files that can't be decoded."""
+    (tmp_path / "binary.bin").write_bytes(b"\x80\x81\x82\x83")
+    (tmp_path / "text.py").write_text("hello\n")
+    tools = make_tools(tmp_path)
+    results = tools.search_text("hello")
+    # Should not crash, and should find text.py
+    assert any("text.py" in r["file"] for r in results)
+
+
+def test_search_text_handles_permission_error(tmp_path):
+    """search_text skips files with permission errors."""
+    import os
+
+    restricted = tmp_path / "noperm.py"
+    restricted.write_text("hello\n")
+    os.chmod(str(restricted), 0o000)
+    (tmp_path / "readable.py").write_text("hello\n")
+    tools = make_tools(tmp_path)
+    try:
+        results = tools.search_text("hello")
+        # Should not crash
+        assert any("readable.py" in r["file"] for r in results)
+    finally:
+        os.chmod(str(restricted), 0o644)

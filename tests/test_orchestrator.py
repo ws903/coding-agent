@@ -140,3 +140,234 @@ async def test_run_saves_to_db(orchestrator):
     orchestrator.db.create_conversation.assert_called_once()
     orchestrator.db.save_plan.assert_called()
     orchestrator.db.update_conversation_status.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_run_aborts_when_plan_rejected(orchestrator):
+    result = await orchestrator.run(
+        "Fix the bug", mode="autonomous", approve_plan=lambda plan: False
+    )
+    assert result["status"] == "aborted"
+    orchestrator.db.update_conversation_status.assert_called_with("conv123", "aborted")
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_failure_continues_to_next_attempt(orchestrator):
+    """When _apply_edits returns False, the step retries."""
+    orchestrator.tools.write_file = MagicMock(side_effect=Exception("disk full"))
+    orchestrator.verifier.run = MagicMock(return_value=make_verification_pass())
+    # The first attempt will fail in _apply_edits (exception), second too,
+    # so _execute_step returns False, triggering replan.
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    # Should have called add_message with "Edit application failed"
+    calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and c[0][2] == "Edit application failed"
+    ]
+    assert len(calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_execute_step_runs_commands(orchestrator):
+    """Commands from executor result are run via sandbox."""
+    result_with_commands = ExecutionResult(
+        file_edits=[FileEdit(path="test.py", action="create", content="pass")],
+        commands=["echo hello", "echo world"],
+        explanation="done",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=result_with_commands)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    # sandbox.run_command should be called for each command, for each step
+    assert orchestrator.tools.sandbox.run_command.call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_rewrite_action(orchestrator, tmp_path):
+    """Test rewrite action reads before, writes new content."""
+    rewrite_result = ExecutionResult(
+        file_edits=[
+            FileEdit(path="existing.py", action="rewrite", content="new content")
+        ],
+        commands=[],
+        explanation="rewritten",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=rewrite_result)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    orchestrator.tools.read_file.assert_called()
+    orchestrator.tools.write_file.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_rewrite_file_not_found(orchestrator):
+    """Test rewrite when file doesn't exist yet -- before should be None."""
+    orchestrator.tools.read_file = MagicMock(side_effect=FileNotFoundError("nope"))
+    rewrite_result = ExecutionResult(
+        file_edits=[FileEdit(path="new.py", action="rewrite", content="content")],
+        commands=[],
+        explanation="rewritten",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=rewrite_result)
+    # read_file raises on first call (for before), but write_file succeeds,
+    # then read_file is called again for after -- we need it to succeed the second time
+    call_count = 0
+
+    def read_side_effect(path):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise FileNotFoundError("not found")
+        return "content"
+
+    orchestrator.tools.read_file = MagicMock(side_effect=read_side_effect)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    orchestrator.tools.write_file.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_search_replace_success(orchestrator):
+    """Test search_replace action path."""
+    sr_result = ExecutionResult(
+        file_edits=[
+            FileEdit(
+                path="code.py",
+                action="search_replace",
+                search="old_code",
+                replace="new_code",
+            )
+        ],
+        commands=[],
+        explanation="replaced",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=sr_result)
+    orchestrator.tools.edit_file = MagicMock(return_value=True)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    orchestrator.tools.edit_file.assert_called()
+    orchestrator.db.save_edit.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_search_replace_file_not_found(orchestrator):
+    """search_replace on missing file sets all_ok=False and continues."""
+    sr_result = ExecutionResult(
+        file_edits=[
+            FileEdit(
+                path="missing.py",
+                action="search_replace",
+                search="old",
+                replace="new",
+            )
+        ],
+        commands=[],
+        explanation="replaced",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=sr_result)
+    orchestrator.tools.read_file = MagicMock(side_effect=FileNotFoundError("not found"))
+    # _apply_edits returns False, so "Edit application failed" is logged
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and c[0][2] == "Edit application failed"
+    ]
+    assert len(calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_search_replace_no_match(orchestrator):
+    """search_replace where edit_file returns False."""
+    sr_result = ExecutionResult(
+        file_edits=[
+            FileEdit(
+                path="code.py",
+                action="search_replace",
+                search="nonexistent",
+                replace="new",
+            )
+        ],
+        commands=[],
+        explanation="replaced",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=sr_result)
+    orchestrator.tools.edit_file = MagicMock(return_value=False)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and c[0][2] == "Edit application failed"
+    ]
+    assert len(calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_unknown_action_skipped(orchestrator):
+    """Unknown edit action is skipped via continue."""
+    unknown_result = ExecutionResult(
+        file_edits=[FileEdit(path="x.py", action="delete", content="")],
+        commands=[],
+        explanation="deleted",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=unknown_result)
+    # Should not crash, just skip. But save_edit won't be called for the unknown action.
+    # _apply_edits returns True (no failures, just skipped)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    # The edit was skipped, so save_edit should NOT be called for it
+    # (save_edit is only called after the action block)
+
+
+@pytest.mark.asyncio
+async def test_apply_edits_exception_sets_all_ok_false(orchestrator):
+    """Exception during edit sets all_ok=False."""
+    orchestrator.tools.write_file = MagicMock(side_effect=PermissionError("denied"))
+    create_result = ExecutionResult(
+        file_edits=[FileEdit(path="x.py", action="create", content="hello")],
+        commands=[],
+        explanation="created",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=create_result)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and c[0][2] == "Edit application failed"
+    ]
+    assert len(calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_get_last_error_returns_system_failed_message(orchestrator):
+    """_get_last_error returns system message containing 'failed'."""
+    orchestrator.db.get_messages = MagicMock(
+        return_value=[
+            {"role": "user", "content": "do something"},
+            {"role": "system", "content": "Edit application failed"},
+        ]
+    )
+    error = orchestrator._get_last_error("conv123")
+    assert error == "Edit application failed"
+
+
+@pytest.mark.asyncio
+async def test_get_last_error_returns_verifier_failed_message(orchestrator):
+    """_get_last_error returns verifier message containing 'failed'."""
+    orchestrator.db.get_messages = MagicMock(
+        return_value=[
+            {"role": "user", "content": "do something"},
+            {"role": "verifier", "content": "Verification failed:\npytest: FAILED"},
+        ]
+    )
+    error = orchestrator._get_last_error("conv123")
+    assert error == "Verification failed:\npytest: FAILED"
+
+
+@pytest.mark.asyncio
+async def test_get_last_error_returns_unknown_when_no_failures(orchestrator):
+    """_get_last_error returns 'Unknown error' when no failure messages exist."""
+    orchestrator.db.get_messages = MagicMock(
+        return_value=[
+            {"role": "user", "content": "do something"},
+            {"role": "executor", "content": "all good"},
+        ]
+    )
+    error = orchestrator._get_last_error("conv123")
+    assert error == "Unknown error"

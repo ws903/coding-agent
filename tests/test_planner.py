@@ -93,3 +93,30 @@ async def test_replan_includes_error(planner, mock_client):
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
     user_msg = messages[1]["content"]
     assert "some error" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
+    """replan with a plan that has steps includes step summaries in the message."""
+    from agent.models import Step
+
+    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
+    original_plan = Plan(
+        goal="Add health check",
+        steps=[
+            Step(id=1, action="Create endpoint", files_needed=["app.py"]),
+            Step(id=2, action="Write tests", files_needed=["test.py"]),
+        ],
+    )
+    plan = await planner.replan(
+        task="Add health check",
+        current_plan=original_plan,
+        failed_step_id=1,
+        error="ImportError",
+    )
+    call_args = mock_client.chat.call_args
+    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    user_msg = messages[1]["content"]
+    assert "Step 1: Create endpoint" in user_msg
+    assert "Step 2: Write tests" in user_msg
+    assert len(plan.steps) == 2
