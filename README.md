@@ -17,20 +17,21 @@ Built from scratch in Python with no framework dependencies.
 ## Requirements
 
 - **Python 3.12+**
+- **uv** — Fast Python package manager
 - **Ollama** (or any OpenAI-compatible API server)
 - **GPU** — Recommended: NVIDIA RTX 5070 Ti (16GB VRAM) or similar. A 14B parameter model at Q4 quantization needs ~9GB VRAM
 
 ## Installation (Windows)
 
-### 1. Install Python
-
-Download Python 3.12+ from [python.org](https://www.python.org/downloads/). During installation, check **"Add Python to PATH"**.
-
-Verify:
+### 1. Install uv
 
 ```powershell
-python --version
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+
+This installs `uv` and adds it to your PATH. Restart your terminal after installation.
+
+uv manages Python versions for you — no separate Python install needed.
 
 ### 2. Install Ollama
 
@@ -50,22 +51,18 @@ ollama list
 
 ### 3. Install the Agent
 
-Clone the repository and install in a virtual environment:
-
 ```powershell
 git clone https://github.com/ws903/coding-agent.git
 cd coding-agent
-
-python -m venv .venv
-.venv\Scripts\activate
-
-pip install -e ".[dev]"
+uv sync
 ```
 
-Verify the installation:
+That's it. `uv sync` creates the venv, installs Python if needed, and resolves all dependencies from the lockfile.
+
+Verify:
 
 ```powershell
-python -m pytest tests/ -q
+uv run pytest tests/ -q
 ```
 
 All 80 tests should pass.
