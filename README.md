@@ -174,13 +174,13 @@ uv run agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
 ### LM Studio
 
 ```powershell
-python -m agent --base-url http://localhost:1234/v1 --model qwen3-14b
+uv run agent --base-url http://localhost:1234/v1 --model qwen3-14b
 ```
 
 ### vLLM
 
 ```powershell
-python -m agent --base-url http://localhost:8000/v1 --model qwen3-14b
+uv run agent --base-url http://localhost:8000/v1 --model qwen3-14b
 ```
 
 ## Recommended Models
