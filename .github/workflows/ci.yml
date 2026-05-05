@@ -17,30 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv sync --python ${{ matrix.python-version }}
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short
 
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install ruff
-        run: pip install ruff
+      - uses: astral-sh/setup-uv@v6
 
       - name: Check formatting
-        run: ruff format --check src/ tests/
+        run: uvx ruff format --check src/ tests/
 
       - name: Check linting
-        run: ruff check src/ tests/
+        run: uvx ruff check src/ tests/
