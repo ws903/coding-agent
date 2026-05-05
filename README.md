@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ws903/coding-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ws903/coding-agent/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/ws903/d00dd6063816632622587ade226668a3/raw/coverage-badge.json)](https://github.com/ws903/coding-agent/actions/workflows/ci.yml)
-[![Python 3.13+](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fws903%2Fcoding-agent%2Fmaster%2Fpyproject.toml)](https://github.com/ws903/coding-agent)
+[![Python 3.13+](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fws903%2Fcoding-agent%2Fmain%2Fpyproject.toml)](https://github.com/ws903/coding-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
