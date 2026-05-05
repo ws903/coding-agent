@@ -378,9 +378,7 @@ async def test_run_returns_answered_when_planner_returns_answer(orchestrator):
 
 @pytest.mark.asyncio
 async def test_run_skips_plan_approval_for_answer(orchestrator):
-    orchestrator.planner.generate_plan = AsyncMock(
-        return_value=Answer(text="hello")
-    )
+    orchestrator.planner.generate_plan = AsyncMock(return_value=Answer(text="hello"))
     approve_calls = []
 
     def approve(plan):

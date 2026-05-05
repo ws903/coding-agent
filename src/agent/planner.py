@@ -18,9 +18,7 @@ class Planner:
         self.llm = llm_client
         self.system_prompt = _load_prompt()
 
-    async def generate_plan(
-        self, task: str, project_context: str
-    ) -> Plan | Answer:
+    async def generate_plan(self, task: str, project_context: str) -> Plan | Answer:
         messages = [
             {"role": "system", "content": self.system_prompt},
             {

@@ -8,9 +8,7 @@ def parse_planner_response(text: str) -> Plan | Answer:
     if plan_match:
         return parse_plan(text)
 
-    answer_match = re.search(
-        r"##\s+Answer\s*\n(.+?)(?=\n##\s|\Z)", text, re.DOTALL
-    )
+    answer_match = re.search(r"##\s+Answer\s*\n(.+?)(?=\n##\s|\Z)", text, re.DOTALL)
     if answer_match:
         return Answer(text=answer_match.group(1).strip())
 
