@@ -108,7 +108,7 @@ The agent will:
 Run a task unattended. The agent executes the full plan-execute-verify loop, then exits with a status code (0 = success, 1 = failure):
 
 ```powershell
-python -m agent --task "refactor the database module to use connection pooling" --auto --project C:\path\to\your\project
+uv run agent --task "refactor the database module to use connection pooling" --auto --project C:\path\to\your\project
 ```
 
 ### CLI Flags
