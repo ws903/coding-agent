@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agent.db import AgentDB
 from agent.models import (
+    Answer,
     Plan,
     Step,
     ExecutionResult,
@@ -52,7 +53,18 @@ class Orchestrator:
         replan_count = 0
 
         self.on_status("Generating plan...")
-        plan = await self.planner.generate_plan(task, project_context)
+        response = await self.planner.generate_plan(task, project_context)
+
+        if isinstance(response, Answer):
+            self.db.add_message(conv_id, "planner", response.text)
+            self.db.update_conversation_status(conv_id, "completed")
+            return {
+                "status": "answered",
+                "conv_id": conv_id,
+                "answer": response.text,
+            }
+
+        plan = response
         plan_version += 1
         self.db.save_plan(conv_id, plan_version, self._plan_to_text(plan))
         self.db.add_message(conv_id, "planner", self._plan_to_text(plan))

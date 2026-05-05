@@ -1,6 +1,18 @@
 import re
 
-from agent.models import Plan, Step, FileEdit
+from agent.models import Plan, Step, FileEdit, Answer
+
+
+def parse_planner_response(text: str) -> Plan | Answer:
+    plan_match = re.search(r"##\s+Plan:", text)
+    if plan_match:
+        return parse_plan(text)
+
+    answer_match = re.search(r"##\s+Answer\s*\n(.+?)(?=\n##\s|\Z)", text, re.DOTALL)
+    if answer_match:
+        return Answer(text=answer_match.group(1).strip())
+
+    return parse_plan(text)
 
 
 def parse_plan(text: str) -> Plan:

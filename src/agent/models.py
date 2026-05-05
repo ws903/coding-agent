@@ -17,6 +17,11 @@ class Plan:
 
 
 @dataclass
+class Answer:
+    text: str
+
+
+@dataclass
 class FileEdit:
     path: str
     action: str  # "create", "rewrite", "search_replace"
