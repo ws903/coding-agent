@@ -6,3 +6,5 @@ build/
 .venv/
 .agent/
 *.db
+.coverage
+.pytest_cache/
