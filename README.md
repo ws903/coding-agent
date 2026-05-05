@@ -168,7 +168,7 @@ uv run agent --base-url http://localhost:11434/v1 --model qwen3:14b
 Higher throughput for NVIDIA GPUs. Install [TabbyAPI](https://github.com/theroyallab/tabbyAPI) separately, then point the agent at it:
 
 ```powershell
-python -m agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
+uv run agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
 ```
 
 ### LM Studio
