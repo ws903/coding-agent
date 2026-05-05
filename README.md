@@ -312,8 +312,7 @@ Since the agent runs in a terminal, you can access it from any machine via SSH i
 ```bash
 ssh user@windows-machine
 cd C:\path\to\coding-agent
-.venv\Scripts\activate
-python -m agent --project C:\path\to\target-project
+uv run agent --project C:\path\to\target-project
 ```
 
 ## License
