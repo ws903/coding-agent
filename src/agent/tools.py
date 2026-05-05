@@ -16,7 +16,9 @@ class FileTools:
         full_path = self.sandbox.validate_path(path)
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        lines = full_path.read_text(encoding="utf-8", errors="replace").splitlines(
+            keepends=True
+        )
         if start_line is not None or end_line is not None:
             start = (start_line or 1) - 1
             end = end_line or len(lines)
@@ -36,7 +38,7 @@ class FileTools:
         full_path = self.sandbox.validate_path(path)
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-        content = full_path.read_text(encoding="utf-8")
+        content = full_path.read_text(encoding="utf-8", errors="replace")
         if search in content:
             new_content = content.replace(search, replace, 1)
             full_path.write_text(encoding="utf-8", data=new_content)
@@ -104,7 +106,7 @@ class FileTools:
             if path_filter and not fnmatch.fnmatch(item.name, path_filter):
                 continue
             try:
-                lines = item.read_text(encoding="utf-8").splitlines()
+                lines = item.read_text(encoding="utf-8", errors="replace").splitlines()
             except (UnicodeDecodeError, PermissionError):
                 continue
             for i, line in enumerate(lines, 1):
