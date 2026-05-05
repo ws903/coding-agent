@@ -6,7 +6,7 @@ from agent.parser import parse_plan
 
 
 def _load_prompt() -> str:
-    return resources.files("agent.prompts").joinpath("planner.md").read_text()
+    return resources.files("agent.prompts").joinpath("planner.md").read_text(encoding="utf-8")
 
 
 class Planner:
