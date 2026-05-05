@@ -160,7 +160,7 @@ Zero-friction setup. Ollama runs as a service and auto-manages models:
 
 ```powershell
 ollama pull qwen3:14b
-python -m agent --base-url http://localhost:11434/v1 --model qwen3:14b
+uv run agent --base-url http://localhost:11434/v1 --model qwen3:14b
 ```
 
 ### TabbyAPI (ExLlamaV3)
