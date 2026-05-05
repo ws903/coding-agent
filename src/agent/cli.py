@@ -149,7 +149,9 @@ async def run_interactive(args: argparse.Namespace) -> None:
             user_input, mode="interactive", approve_plan=_approve_plan
         )
         status = result["status"]
-        if status == "completed":
+        if status == "answered":
+            console.print(result["answer"] + "\n")
+        elif status == "completed":
             console.print("[green]Task completed successfully.[/green]\n")
         elif status == "failed":
             console.print(
@@ -170,12 +172,14 @@ async def run_autonomous(args: argparse.Namespace) -> int:
     console.print(f"[bold]Autonomous mode[/bold] | Task: {args.task}")
     result = await orch.run(args.task, mode="autonomous")
 
+    if result["status"] == "answered":
+        console.print(result["answer"])
+        return 0
     if result["status"] == "completed":
         console.print("[green]Task completed successfully.[/green]")
         return 0
-    else:
-        console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
-        return 1
+    console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
+    return 1
 
 
 def _show_config(orch: Orchestrator) -> None:

@@ -4,7 +4,7 @@ import pytest
 
 from agent.planner import Planner
 from agent.llm_client import LLMClient
-from agent.models import Plan
+from agent.models import Answer, Plan
 
 
 MOCK_PLAN_RESPONSE = """## Plan: Add health check
@@ -93,6 +93,16 @@ async def test_replan_includes_error(planner, mock_client):
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
     user_msg = messages[1]["content"]
     assert "some error" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_generate_plan_returns_answer_for_question(planner, mock_client):
+    mock_client.chat = AsyncMock(
+        return_value="## Answer\n\nThis app is a local coding agent.\n"
+    )
+    result = await planner.generate_plan("what is this app?", "file tree")
+    assert isinstance(result, Answer)
+    assert "local coding agent" in result.text
 
 
 @pytest.mark.asyncio

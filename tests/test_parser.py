@@ -1,4 +1,5 @@
-from agent.parser import parse_plan, parse_edits
+from agent.models import Answer, Plan
+from agent.parser import parse_plan, parse_edits, parse_planner_response
 
 
 class TestParsePlan:
@@ -141,3 +142,50 @@ RUN: pytest tests/
     def test_no_edits_returns_empty(self):
         edits = parse_edits("just some explanation text")
         assert len(edits) == 0
+
+
+class TestParsePlannerResponse:
+    def test_answer_only_returns_answer(self):
+        text = """## Answer
+
+This app is a local coding agent. It uses Ollama for inference.
+"""
+        result = parse_planner_response(text)
+        assert isinstance(result, Answer)
+        assert "local coding agent" in result.text
+
+    def test_plan_only_returns_plan(self):
+        text = """## Plan: Add health check
+
+### Step 1: Create endpoint
+- Files needed: src/app.py
+"""
+        result = parse_planner_response(text)
+        assert isinstance(result, Plan)
+        assert result.goal == "Add health check"
+        assert len(result.steps) == 1
+
+    def test_both_prefers_plan(self):
+        text = """## Answer
+some text
+
+## Plan: Do the thing
+
+### Step 1: Do it
+- Files needed: x.py
+"""
+        result = parse_planner_response(text)
+        assert isinstance(result, Plan)
+        assert result.goal == "Do the thing"
+
+    def test_neither_falls_back_to_empty_plan(self):
+        result = parse_planner_response("just rambling, no headers")
+        assert isinstance(result, Plan)
+        assert result.goal == ""
+        assert len(result.steps) == 0
+
+    def test_answer_strips_whitespace(self):
+        text = "## Answer\n\n   Hello world.   \n\n"
+        result = parse_planner_response(text)
+        assert isinstance(result, Answer)
+        assert result.text == "Hello world."

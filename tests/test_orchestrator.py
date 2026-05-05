@@ -5,6 +5,7 @@ import pytest
 
 from agent.orchestrator import Orchestrator
 from agent.models import (
+    Answer,
     Plan,
     Step,
     ExecutionResult,
@@ -358,6 +359,39 @@ async def test_get_last_error_returns_verifier_failed_message(orchestrator):
     )
     error = orchestrator._get_last_error("conv123")
     assert error == "Verification failed:\npytest: FAILED"
+
+
+@pytest.mark.asyncio
+async def test_run_returns_answered_when_planner_returns_answer(orchestrator):
+    orchestrator.planner.generate_plan = AsyncMock(
+        return_value=Answer(text="This app is a local coding agent.")
+    )
+    result = await orchestrator.run("what is this app?", mode="autonomous")
+    assert result["status"] == "answered"
+    assert "local coding agent" in result["answer"]
+    orchestrator.executor.execute.assert_not_called()
+    orchestrator.verifier.run.assert_not_called()
+    orchestrator.db.update_conversation_status.assert_called_with(
+        "conv123", "completed"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_skips_plan_approval_for_answer(orchestrator):
+    orchestrator.planner.generate_plan = AsyncMock(
+        return_value=Answer(text="hello")
+    )
+    approve_calls = []
+
+    def approve(plan):
+        approve_calls.append(plan)
+        return True
+
+    result = await orchestrator.run(
+        "explain this", mode="interactive", approve_plan=approve
+    )
+    assert result["status"] == "answered"
+    assert approve_calls == []
 
 
 @pytest.mark.asyncio

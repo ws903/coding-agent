@@ -1,8 +1,8 @@
 from importlib import resources
 
 from agent.llm_client import LLMClient
-from agent.models import Plan
-from agent.parser import parse_plan
+from agent.models import Answer, Plan
+from agent.parser import parse_plan, parse_planner_response
 
 
 def _load_prompt() -> str:
@@ -18,7 +18,9 @@ class Planner:
         self.llm = llm_client
         self.system_prompt = _load_prompt()
 
-    async def generate_plan(self, task: str, project_context: str) -> Plan:
+    async def generate_plan(
+        self, task: str, project_context: str
+    ) -> Plan | Answer:
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
@@ -29,7 +31,7 @@ class Planner:
             },
         ]
         response = await self.llm.chat(messages, temperature=0.3)
-        return parse_plan(response)
+        return parse_planner_response(response)
 
     async def replan(
         self,
