@@ -1,0 +1,3 @@
+#!/bin/sh
+uvx ruff format --check src/ tests/ || { echo "Run 'uvx ruff format src/ tests/' to fix."; exit 1; }
+uvx ruff check src/ tests/ || exit 1
