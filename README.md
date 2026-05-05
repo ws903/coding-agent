@@ -291,16 +291,18 @@ coding-agent/
 ## Development
 
 ```powershell
-# Create venv and install with dev dependencies
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
+# Install all dependencies (including dev)
+uv sync
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run a specific test file
-pytest tests/test_parser.py -v
+uv run pytest tests/test_parser.py -v
+
+# Lint and format
+uvx ruff check src/ tests/
+uvx ruff format src/ tests/
 ```
 
 ## Remote Access
