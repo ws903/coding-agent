@@ -65,7 +65,7 @@ async def test_generate_plan_includes_context(planner, mock_client):
     await planner.generate_plan("Add feature", "src/app.py\nsrc/models.py")
     call_args = mock_client.chat.call_args
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[1]["content"]
+    user_msg = messages[-1]["content"]
     assert "Add feature" in user_msg
     assert "src/app.py" in user_msg
 
@@ -91,7 +91,7 @@ async def test_replan_includes_error(planner, mock_client):
     await planner.replan("task", original_plan, 1, "some error")
     call_args = mock_client.chat.call_args
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[1]["content"]
+    user_msg = messages[-1]["content"]
     assert "some error" in user_msg
 
 
@@ -126,7 +126,7 @@ async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
     )
     call_args = mock_client.chat.call_args
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[1]["content"]
+    user_msg = messages[-1]["content"]
     assert "Step 1: Create endpoint" in user_msg
     assert "Step 2: Write tests" in user_msg
     assert len(plan.steps) == 2

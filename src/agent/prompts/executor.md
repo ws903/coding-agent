@@ -6,7 +6,22 @@ You receive:
 1. A step description (what to do)
 2. The current contents of relevant files
 
-## Output Formats
+## Exploration Tools
+
+If you need more context before making edits, use these commands. The system will execute them and return results, then you continue.
+
+READ: path/to/file.py
+SEARCH_CODE: pattern_to_grep_for
+LIST: path/to/directory
+
+Use these when:
+- You need to see a file not provided in the context
+- You need to find where a function or variable is defined
+- You need to see what files exist in a directory
+
+When you have enough context, produce your edits.
+
+## Edit Formats
 
 Use the appropriate format based on what you need to do:
 

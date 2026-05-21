@@ -3,6 +3,7 @@ from importlib import resources
 from agent.llm_client import LLMClient
 from agent.models import Answer, Plan
 from agent.parser import parse_plan, parse_planner_response, validate_plan
+from agent.prompts.examples import PLANNER_EXAMPLES
 
 MAX_PARSE_RETRIES = 2
 
@@ -29,6 +30,7 @@ class Planner:
     async def generate_plan(self, task: str, project_context: str) -> Plan | Answer:
         messages = [
             {"role": "system", "content": self.system_prompt},
+            *PLANNER_EXAMPLES,
             {
                 "role": "user",
                 "content": (
@@ -78,6 +80,7 @@ class Planner:
 
         messages = [
             {"role": "system", "content": self.system_prompt},
+            *PLANNER_EXAMPLES,
             {
                 "role": "user",
                 "content": (
