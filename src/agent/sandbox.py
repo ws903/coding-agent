@@ -2,6 +2,7 @@
 import subprocess
 from pathlib import Path
 
+from agent.command_policy import CommandBlocked, check_command
 from agent.models import CommandResult
 
 
@@ -23,6 +24,10 @@ class Sandbox:
         return resolved
 
     def run_command(self, command: str) -> CommandResult:
+        verdict, reason = check_command(command)
+        if verdict == "block":
+            raise CommandBlocked(command, reason)
+
         try:
             proc = subprocess.run(
                 command,

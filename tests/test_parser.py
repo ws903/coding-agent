@@ -1,5 +1,11 @@
-from agent.models import Answer, Plan
-from agent.parser import parse_plan, parse_edits, parse_planner_response
+from agent.models import Answer, Plan, FileEdit
+from agent.parser import (
+    parse_plan,
+    parse_edits,
+    parse_planner_response,
+    validate_plan,
+    validate_edits,
+)
 
 
 class TestParsePlan:
@@ -188,3 +194,50 @@ some text
         result = parse_planner_response(text)
         assert isinstance(result, Answer)
         assert result.text == "Hello world."
+
+
+class TestValidatePlan:
+    def test_valid_plan_no_errors(self):
+        plan = parse_plan(
+            "## Plan: Do it\n\n### Step 1: First thing\n- Files needed: x.py\n"
+        )
+        assert validate_plan(plan) == []
+
+    def test_empty_plan_reports_error(self):
+        plan = parse_plan("no plan here")
+        errors = validate_plan(plan)
+        assert any("0 steps" in e for e in errors)
+
+    def test_step_without_action_reports_error(self):
+        from agent.models import Step
+
+        plan = Plan(goal="test", steps=[Step(id=1, action="", files_needed=[])])
+        errors = validate_plan(plan)
+        assert any("no action" in e for e in errors)
+
+
+class TestValidateEdits:
+    def test_valid_edits_no_errors(self):
+        edits = [FileEdit(path="a.py", action="create", content="pass")]
+        assert validate_edits(edits) == []
+
+    def test_empty_edits_reports_error(self):
+        errors = validate_edits([])
+        assert any("No edits" in e for e in errors)
+
+    def test_missing_path_reports_error(self):
+        edits = [FileEdit(path="", action="create", content="pass")]
+        errors = validate_edits(edits)
+        assert any("missing file path" in e for e in errors)
+
+    def test_search_replace_missing_search(self):
+        edits = [
+            FileEdit(path="a.py", action="search_replace", search=None, replace="x")
+        ]
+        errors = validate_edits(edits)
+        assert any("SEARCH" in e for e in errors)
+
+    def test_create_missing_content(self):
+        edits = [FileEdit(path="a.py", action="create", content=None)]
+        errors = validate_edits(edits)
+        assert any("content" in e for e in errors)
