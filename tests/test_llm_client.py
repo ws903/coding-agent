@@ -242,6 +242,48 @@ async def test_close_client(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_records_token_usage(client):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {"prompt_tokens": 50, "completion_tokens": 20},
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    await client.chat([{"role": "user", "content": "test"}])
+    assert client.total_usage.prompt_tokens == 50
+    assert client.total_usage.completion_tokens == 20
+    assert client.total_usage.total_tokens == 70
+    assert client.call_count == 1
+
+    await client.chat([{"role": "user", "content": "test2"}])
+    assert client.total_usage.prompt_tokens == 100
+    assert client.total_usage.total_tokens == 140
+    assert client.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_records_usage_without_usage_field(client):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"choices": [{"message": {"content": "hi"}}]}
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    await client.chat([{"role": "user", "content": "test"}])
+    assert client.total_usage.total_tokens == 0
+    assert client.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_yields_content(client):
     async def mock_aiter_lines():
         lines = [

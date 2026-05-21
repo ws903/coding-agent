@@ -59,16 +59,16 @@ class FileTools:
             window = content_lines[i : i + len(search_lines)]
             window_stripped = [line.rstrip().lstrip() for line in window]
             if window_stripped == search_stripped:
-                indent = ""
-                first_line = content_lines[i]
-                indent = first_line[: len(first_line) - len(first_line.lstrip())]
+                content_base = self._indent_of(content_lines[i])
+                search_base = self._indent_of(search_lines[0]) if search_lines else 0
+                indent_offset = content_base - search_base
+
                 replace_lines = replace.splitlines(keepends=True)
                 indented_replace = []
-                for j, rline in enumerate(replace_lines):
-                    if j == 0:
-                        indented_replace.append(indent + rline.lstrip())
-                    else:
-                        indented_replace.append(indent + rline.lstrip())
+                for rline in replace_lines:
+                    orig_indent = self._indent_of(rline)
+                    new_indent = max(0, orig_indent + indent_offset)
+                    indented_replace.append(" " * new_indent + rline.lstrip())
                 result_lines = (
                     content_lines[:i]
                     + indented_replace
@@ -76,6 +76,10 @@ class FileTools:
                 )
                 return "".join(result_lines)
         return None
+
+    @staticmethod
+    def _indent_of(line: str) -> int:
+        return len(line) - len(line.lstrip())
 
     def list_files(self, directory: str = ".", pattern: str | None = None) -> list[str]:
         dir_path = self.sandbox.validate_path(directory)

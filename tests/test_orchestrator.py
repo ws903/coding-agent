@@ -510,3 +510,51 @@ async def test_replan_receives_completed_steps(orchestrator):
     assert completed is not None
     assert len(completed) == 1
     assert completed[0]["step_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_abort_stops_execution(orchestrator):
+    orchestrator.planner.generate_plan = AsyncMock(return_value=make_plan(3))
+
+    original_execute = orchestrator.executor.execute
+
+    async def abort_on_first_step(step, errors=None):
+        orchestrator.abort()
+        return await original_execute(step, errors=errors)
+
+    orchestrator.executor.execute = AsyncMock(side_effect=abort_on_first_step)
+    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    assert result["status"] == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_max_steps_stops_execution(orchestrator):
+    orchestrator.max_steps = 1
+    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    assert result["status"] in ("completed", "failed")
+    assert orchestrator._steps_executed <= 2
+
+
+def test_status_returns_state(orchestrator):
+    s = orchestrator.status()
+    assert "task" in s
+    assert "steps_executed" in s
+    assert "total_steps" in s
+    assert "aborted" in s
+
+
+def test_token_usage_returns_dict(orchestrator):
+    orchestrator.planner.llm = MagicMock()
+    orchestrator.planner.llm.total_usage = MagicMock(
+        prompt_tokens=100, completion_tokens=50, total_tokens=150
+    )
+    orchestrator.planner.llm.call_count = 2
+    orchestrator.executor.llm = MagicMock()
+    orchestrator.executor.llm.total_usage = MagicMock(
+        prompt_tokens=200, completion_tokens=100, total_tokens=300
+    )
+    orchestrator.executor.llm.call_count = 3
+    usage = orchestrator.token_usage()
+    assert usage["planner"]["total_tokens"] == 150
+    assert usage["executor"]["total_tokens"] == 300
+    assert usage["planner"]["calls"] == 2

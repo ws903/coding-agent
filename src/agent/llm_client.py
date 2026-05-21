@@ -6,6 +6,8 @@ from collections.abc import AsyncGenerator
 
 import httpx
 
+from agent.models import TokenUsage
+
 DEFAULT_CONTEXT_LIMIT = 8192
 RESPONSE_RESERVE = 4096
 
@@ -49,6 +51,8 @@ class LLMClient:
         self.timeout = timeout
         self._context_limit: int | None = None
         self._client: httpx.AsyncClient | None = None
+        self.total_usage = TokenUsage()
+        self.call_count = 0
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -60,6 +64,15 @@ class LLMClient:
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
             await self._client.close()
+
+    def _record_usage(self, data: dict) -> None:
+        usage = data.get("usage", {})
+        prompt = usage.get("prompt_tokens", 0)
+        completion = usage.get("completion_tokens", 0)
+        self.total_usage.prompt_tokens += prompt
+        self.total_usage.completion_tokens += completion
+        self.total_usage.total_tokens += prompt + completion
+        self.call_count += 1
 
     async def get_context_limit(self) -> int:
         if self._context_limit is not None:
@@ -150,6 +163,7 @@ class LLMClient:
                         continue
                 response.raise_for_status()
                 data = response.json()
+                self._record_usage(data)
                 return data["choices"][0]["message"]["content"]
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
                 last_error = exc

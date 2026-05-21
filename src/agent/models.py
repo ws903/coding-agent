@@ -55,3 +55,10 @@ class VerificationResult:
 class ParseError:
     errors: list[str]
     raw_output: str
+
+
+@dataclass
+class TokenUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
