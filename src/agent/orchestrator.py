@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agent.command_policy import CommandBlocked
 from agent.db import AgentDB
+from agent.git_ops import GitOps
 from agent.models import (
     Answer,
     Plan,
@@ -34,6 +35,7 @@ class Orchestrator:
         db: AgentDB,
         project_root: Path,
         on_status: callable | None = None,
+        git_ops: GitOps | None = None,
     ):
         self.planner = planner
         self.executor = executor
@@ -42,6 +44,7 @@ class Orchestrator:
         self.db = db
         self.project_root = project_root
         self.on_status = on_status or (lambda msg: None)
+        self.git = git_ops or GitOps(project_root)
 
     async def run(
         self,
@@ -88,15 +91,22 @@ class Orchestrator:
             return {"status": "aborted", "conv_id": conv_id}
 
         step_index = 0
+        completed_steps: list[dict] = []
         while step_index < len(plan.steps):
             step = plan.steps[step_index]
             self.on_status(f"Executing step {step.id}: {step.action}")
 
+            snapshot_sha = self._snapshot(f"agent: before step {step.id}")
             success = await self._execute_step(conv_id, step)
 
             if success:
+                completed_steps.append({"step_id": step.id, "action": step.action})
                 step_index += 1
                 continue
+
+            if snapshot_sha:
+                self.on_status("Rolling back failed step...")
+                self.git.rollback(snapshot_sha)
 
             replan_count += 1
             if replan_count > MAX_REPLANS:
@@ -107,7 +117,12 @@ class Orchestrator:
             self.on_status(f"Replanning (attempt {replan_count}/{MAX_REPLANS})...")
             error_summary = self._get_last_error(conv_id)
             plan = await self.planner.replan(
-                task, plan, step.id, error_summary, project_context
+                task,
+                plan,
+                step.id,
+                error_summary,
+                project_context,
+                completed_steps=completed_steps,
             )
             plan_version += 1
             self.db.save_plan(conv_id, plan_version, self._plan_to_text(plan))
@@ -117,6 +132,7 @@ class Orchestrator:
                 f"Replan v{plan_version}:\n{self._plan_to_text(plan)}",
             )
             step_index = 0
+            completed_steps = []
 
         self.db.update_conversation_status(conv_id, "completed")
         self.on_status("All steps completed successfully.")
@@ -306,6 +322,12 @@ class Orchestrator:
                 lines.append(f"- Verify: {step.verify_command}")
             lines.append("")
         return "\n".join(lines)
+
+    def _snapshot(self, message: str) -> str | None:
+        try:
+            return self.git.snapshot(message)
+        except Exception:
+            return None
 
     def _get_last_error(self, conv_id: str) -> str:
         messages = self.db.get_messages(conv_id)

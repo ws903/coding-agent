@@ -73,10 +73,18 @@ class Planner:
         failed_step_id: int,
         error: str,
         project_context: str = "",
+        completed_steps: list[dict] | None = None,
     ) -> Plan:
         plan_summary = f"Goal: {current_plan.goal}\n"
         for step in current_plan.steps:
             plan_summary += f"Step {step.id}: {step.action}\n"
+
+        completed_section = ""
+        if completed_steps:
+            items = "\n".join(
+                f"- Step {s['step_id']}: {s['action']} (DONE)" for s in completed_steps
+            )
+            completed_section = f"## Completed Steps\n{items}\n\n"
 
         messages = [
             {"role": "system", "content": self.system_prompt},
@@ -87,8 +95,10 @@ class Planner:
                     f"## Task\n{task}\n\n"
                     f"## Project Context\n{project_context}\n\n"
                     f"## Previous Plan\n{plan_summary}\n\n"
+                    f"{completed_section}"
                     f"## Failure\nStep {failed_step_id} failed with error:\n{error}\n\n"
-                    f"Please create a revised plan that addresses this failure."
+                    f"The completed steps above are already done — do not repeat them. "
+                    f"Create a revised plan starting from the failed step."
                 ),
             },
         ]

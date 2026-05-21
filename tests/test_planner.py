@@ -163,3 +163,32 @@ async def test_replan_retries_on_empty_parse(planner, mock_client):
     result = await planner.replan("task", original_plan, 1, "error")
     assert len(result.steps) == 2
     assert mock_client.chat.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_replan_includes_completed_steps(planner, mock_client):
+    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
+    original_plan = Plan(goal="goal", steps=[])
+    completed = [
+        {"step_id": 1, "action": "Create endpoint"},
+        {"step_id": 2, "action": "Write tests"},
+    ]
+    await planner.replan("task", original_plan, 3, "error", completed_steps=completed)
+    call_args = mock_client.chat.call_args
+    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    user_msg = messages[-1]["content"]
+    assert "Completed Steps" in user_msg
+    assert "Create endpoint" in user_msg
+    assert "(DONE)" in user_msg
+    assert "do not repeat them" in user_msg
+
+
+@pytest.mark.asyncio
+async def test_replan_without_completed_steps(planner, mock_client):
+    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
+    original_plan = Plan(goal="goal", steps=[])
+    await planner.replan("task", original_plan, 1, "error")
+    call_args = mock_client.chat.call_args
+    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    user_msg = messages[-1]["content"]
+    assert "Completed Steps" not in user_msg
