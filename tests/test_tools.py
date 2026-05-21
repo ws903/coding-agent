@@ -80,6 +80,27 @@ def test_edit_file_whitespace_normalized(tmp_path):
     assert "bye" in content
 
 
+def test_edit_file_whitespace_preserves_relative_indent(tmp_path):
+    original = (
+        "class Foo:\n    def bar(self):\n        if True:\n            return 1\n"
+    )
+    (tmp_path / "code.py").write_text(original)
+    tools = make_tools(tmp_path)
+    success = tools.edit_file(
+        "code.py",
+        "def bar(self):\n    if True:\n        return 1",
+        "def bar(self):\n    if True:\n        return 2\n    else:\n        return 0",
+    )
+    assert success
+    content = (tmp_path / "code.py").read_text()
+    lines = content.splitlines()
+    assert lines[1] == "    def bar(self):"
+    assert lines[2] == "        if True:"
+    assert lines[3] == "            return 2"
+    assert lines[4] == "        else:"
+    assert lines[5] == "            return 0"
+
+
 def test_list_files(tmp_path):
     (tmp_path / "a.py").write_text("")
     (tmp_path / "b.txt").write_text("")

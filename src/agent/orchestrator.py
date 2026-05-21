@@ -36,6 +36,7 @@ class Orchestrator:
         project_root: Path,
         on_status: callable | None = None,
         git_ops: GitOps | None = None,
+        max_steps: int = 20,
     ):
         self.planner = planner
         self.executor = executor
@@ -45,6 +46,42 @@ class Orchestrator:
         self.project_root = project_root
         self.on_status = on_status or (lambda msg: None)
         self.git = git_ops or GitOps(project_root)
+        self.max_steps = max_steps
+        self._aborted = False
+        self._current_task: str = ""
+        self._current_step: str = ""
+        self._steps_executed = 0
+        self._total_steps = 0
+
+    def abort(self) -> None:
+        self._aborted = True
+
+    def status(self) -> dict:
+        return {
+            "task": self._current_task,
+            "current_step": self._current_step,
+            "steps_executed": self._steps_executed,
+            "total_steps": self._total_steps,
+            "aborted": self._aborted,
+        }
+
+    def token_usage(self) -> dict:
+        planner_usage = self.planner.llm.total_usage
+        executor_usage = self.executor.llm.total_usage
+        return {
+            "planner": {
+                "prompt_tokens": planner_usage.prompt_tokens,
+                "completion_tokens": planner_usage.completion_tokens,
+                "total_tokens": planner_usage.total_tokens,
+                "calls": self.planner.llm.call_count,
+            },
+            "executor": {
+                "prompt_tokens": executor_usage.prompt_tokens,
+                "completion_tokens": executor_usage.completion_tokens,
+                "total_tokens": executor_usage.total_tokens,
+                "calls": self.executor.llm.call_count,
+            },
+        }
 
     async def run(
         self,
@@ -54,6 +91,10 @@ class Orchestrator:
     ) -> dict:
         conv_id = self.db.create_conversation(mode, task)
         self.db.add_message(conv_id, "user", task)
+
+        self._aborted = False
+        self._current_task = task
+        self._steps_executed = 0
 
         project_context = self._build_project_context()
         plan_version = 0
@@ -92,12 +133,25 @@ class Orchestrator:
 
         step_index = 0
         completed_steps: list[dict] = []
+        self._total_steps = len(plan.steps)
         while step_index < len(plan.steps):
+            if self._aborted:
+                self.on_status("Aborted by user.")
+                self.db.update_conversation_status(conv_id, "aborted")
+                return {"status": "aborted", "conv_id": conv_id}
+
+            if self._steps_executed >= self.max_steps:
+                self.on_status(f"Max steps ({self.max_steps}) reached.")
+                self.db.update_conversation_status(conv_id, "failed")
+                return {"status": "failed", "conv_id": conv_id, "reason": "max_steps"}
+
             step = plan.steps[step_index]
+            self._current_step = f"Step {step.id}: {step.action}"
             self.on_status(f"Executing step {step.id}: {step.action}")
 
             snapshot_sha = self._snapshot(f"agent: before step {step.id}")
             success = await self._execute_step(conv_id, step)
+            self._steps_executed += 1
 
             if success:
                 completed_steps.append({"step_id": step.id, "action": step.action})

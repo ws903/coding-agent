@@ -51,6 +51,7 @@ def build_orchestrator(
     base_url: str = "http://localhost:11434/v1",
     model: str = "qwen3:14b",
     verify_commands: list[str] | None = None,
+    max_steps: int = 20,
 ) -> Orchestrator:
     project_root = project_root.resolve()
     db = AgentDB(project_root / ".agent" / "agent.db")
@@ -84,6 +85,7 @@ def build_orchestrator(
         db=db,
         project_root=project_root,
         on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        max_steps=max_steps,
     )
 
 
@@ -111,7 +113,9 @@ SLASH_COMMANDS = {
 
 async def run_interactive(args: argparse.Namespace) -> None:
     project_root = Path(args.project).resolve()
-    orch = build_orchestrator(project_root, args.base_url, args.model)
+    orch = build_orchestrator(
+        project_root, args.base_url, args.model, max_steps=args.max_steps
+    )
 
     console.print(
         f"[bold]Agent v0.1.0[/bold] | Model: {args.model} | Project: {project_root}"
@@ -135,6 +139,13 @@ async def run_interactive(args: argparse.Namespace) -> None:
             for cmd, desc in SLASH_COMMANDS.items():
                 console.print(f"  [bold]{cmd}[/bold] — {desc}")
             continue
+        elif user_input == "/status":
+            _show_status(orch)
+            continue
+        elif user_input == "/abort":
+            orch.abort()
+            console.print("[yellow]Abort requested.[/yellow]")
+            continue
         elif user_input == "/config":
             _show_config(orch)
             continue
@@ -152,11 +163,11 @@ async def run_interactive(args: argparse.Namespace) -> None:
         if status == "answered":
             console.print(result["answer"] + "\n")
         elif status == "completed":
-            console.print("[green]Task completed successfully.[/green]\n")
+            console.print("[green]Task completed successfully.[/green]")
+            _show_token_usage(orch)
         elif status == "failed":
-            console.print(
-                f"[red]Task failed: {result.get('reason', 'unknown')}[/red]\n"
-            )
+            console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
+            _show_token_usage(orch)
         elif status == "aborted":
             console.print("[yellow]Task aborted.[/yellow]\n")
 
@@ -167,7 +178,9 @@ async def run_autonomous(args: argparse.Namespace) -> int:
         return 1
 
     project_root = Path(args.project).resolve()
-    orch = build_orchestrator(project_root, args.base_url, args.model)
+    orch = build_orchestrator(
+        project_root, args.base_url, args.model, max_steps=args.max_steps
+    )
 
     console.print(f"[bold]Autonomous mode[/bold] | Task: {args.task}")
     result = await orch.run(args.task, mode="autonomous")
@@ -177,9 +190,39 @@ async def run_autonomous(args: argparse.Namespace) -> int:
         return 0
     if result["status"] == "completed":
         console.print("[green]Task completed successfully.[/green]")
+        _show_token_usage(orch)
         return 0
     console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
+    _show_token_usage(orch)
     return 1
+
+
+def _show_token_usage(orch: Orchestrator) -> None:
+    try:
+        usage = orch.token_usage()
+        p = usage["planner"]
+        e = usage["executor"]
+        total = p["total_tokens"] + e["total_tokens"]
+        calls = p["calls"] + e["calls"]
+        if total > 0:
+            console.print(
+                f"[dim]Tokens: {total:,} ({p['total_tokens']:,} planner + "
+                f"{e['total_tokens']:,} executor) | {calls} LLM calls[/dim]\n"
+            )
+    except (TypeError, KeyError, AttributeError):
+        pass
+
+
+def _show_status(orch: Orchestrator) -> None:
+    s = orch.status()
+    if not s["task"]:
+        console.print("No task running.")
+        return
+    console.print(f"[bold]Task:[/bold] {s['task']}")
+    console.print(f"[bold]Step:[/bold] {s['current_step']}")
+    console.print(
+        f"[bold]Progress:[/bold] {s['steps_executed']}/{s['total_steps']} steps executed"
+    )
 
 
 def _show_config(orch: Orchestrator) -> None:

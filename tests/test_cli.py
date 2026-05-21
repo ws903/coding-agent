@@ -227,7 +227,10 @@ def test_show_history_with_rows(mock_console):
 async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
     mock_prompt.ask.return_value = "/quit"
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -241,7 +244,10 @@ async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
 async def test_run_interactive_help(mock_console, mock_prompt, mock_build):
     mock_prompt.ask.side_effect = ["/help", "/quit"]
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -261,7 +267,10 @@ async def test_run_interactive_config(
 ):
     mock_prompt.ask.side_effect = ["/config", "/quit"]
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_orch = MagicMock()
     mock_build.return_value = mock_orch
@@ -279,7 +288,10 @@ async def test_run_interactive_history(
 ):
     mock_prompt.ask.side_effect = ["/history", "/quit"]
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_orch = MagicMock()
     mock_build.return_value = mock_orch
@@ -294,7 +306,10 @@ async def test_run_interactive_history(
 async def test_run_interactive_unknown_command(mock_console, mock_prompt, mock_build):
     mock_prompt.ask.side_effect = ["/foobar", "/quit"]
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -309,7 +324,10 @@ async def test_run_interactive_unknown_command(mock_console, mock_prompt, mock_b
 async def test_run_interactive_empty_input(mock_console, mock_prompt, mock_build):
     mock_prompt.ask.side_effect = ["", "   ", "/quit"]
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -329,7 +347,10 @@ async def test_run_interactive_task_completed(
     mock_orch.run = AsyncMock(return_value={"status": "completed"})
     mock_build.return_value = mock_orch
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     await run_interactive(args)
     mock_orch.run.assert_called_once_with(
@@ -354,7 +375,10 @@ async def test_run_interactive_task_failed(
     )
     mock_build.return_value = mock_orch
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
@@ -374,7 +398,10 @@ async def test_run_interactive_task_aborted(
     mock_orch.run = AsyncMock(return_value={"status": "aborted"})
     mock_build.return_value = mock_orch
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
@@ -388,7 +415,10 @@ async def test_run_interactive_task_aborted(
 async def test_run_interactive_eof(mock_console, mock_prompt, mock_build):
     mock_prompt.ask.side_effect = EOFError()
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -405,7 +435,10 @@ async def test_run_interactive_keyboard_interrupt(
 ):
     mock_prompt.ask.side_effect = KeyboardInterrupt()
     args = Namespace(
-        project="/tmp/test", base_url="http://localhost:11434/v1", model="qwen3:14b"
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
     )
     mock_build.return_value = MagicMock()
     await run_interactive(args)
@@ -425,6 +458,7 @@ async def test_run_autonomous_no_task(mock_console, mock_build):
         base_url="http://localhost:11434/v1",
         model="qwen3:14b",
         task=None,
+        max_steps=20,
     )
     result = await run_autonomous(args)
     assert result == 1
@@ -445,6 +479,7 @@ async def test_run_autonomous_completed(mock_console, mock_build):
         base_url="http://localhost:11434/v1",
         model="qwen3:14b",
         task="Fix bug",
+        max_steps=20,
     )
     result = await run_autonomous(args)
     assert result == 0
@@ -465,6 +500,7 @@ async def test_run_autonomous_failed(mock_console, mock_build):
         base_url="http://localhost:11434/v1",
         model="qwen3:14b",
         task="Deploy app",
+        max_steps=20,
     )
     result = await run_autonomous(args)
     assert result == 1
@@ -484,6 +520,7 @@ async def test_run_autonomous_failed_no_reason(mock_console, mock_build):
         base_url="http://localhost:11434/v1",
         model="qwen3:14b",
         task="Deploy app",
+        max_steps=20,
     )
     result = await run_autonomous(args)
     assert result == 1
