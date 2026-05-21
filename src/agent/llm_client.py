@@ -1,10 +1,20 @@
+import asyncio
 import json
+import logging
+import random
 from collections.abc import AsyncGenerator
 
 import httpx
 
 DEFAULT_CONTEXT_LIMIT = 8192
 RESPONSE_RESERVE = 4096
+
+MAX_RETRIES = 3
+BACKOFF_BASE = 0.5
+BACKOFF_MAX = 8.0
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+logger = logging.getLogger(__name__)
 
 
 def estimate_tokens(text: str) -> int:
@@ -17,6 +27,12 @@ def estimate_messages_tokens(messages: list[dict]) -> int:
         total += 4
         total += estimate_tokens(msg.get("content", ""))
     return total + 2
+
+
+def _backoff_delay(attempt: int) -> float:
+    delay = min(BACKOFF_BASE * (2**attempt), BACKOFF_MAX)
+    jitter = random.uniform(0, delay * 0.5)
+    return delay + jitter
 
 
 class LLMClient:
@@ -32,6 +48,18 @@ class LLMClient:
         self.api_key = api_key
         self.timeout = timeout
         self._context_limit: int | None = None
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout, headers=self._headers()
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.close()
 
     async def get_context_limit(self) -> int:
         if self._context_limit is not None:
@@ -58,6 +86,11 @@ class LLMClient:
     def _compute_num_ctx(self, messages: list[dict], max_tokens: int) -> int:
         prompt_tokens = estimate_messages_tokens(messages)
         return int(prompt_tokens * 1.25) + max_tokens
+
+    def _dynamic_max_tokens(self, messages: list[dict], context_limit: int) -> int:
+        prompt_tokens = estimate_messages_tokens(messages)
+        available = context_limit - prompt_tokens
+        return max(256, min(available, RESPONSE_RESERVE))
 
     def _build_payload(
         self,
@@ -88,13 +121,50 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> str:
+        context_limit = await self.get_context_limit()
+        max_tokens = self._dynamic_max_tokens(messages, context_limit)
         payload = self._build_payload(messages, temperature, max_tokens, stream=False)
         url = f"{self.base_url}/chat/completions"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, json=payload, headers=self._headers())
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+        client = await self._get_client()
+
+        last_error: Exception | None = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = await client.post(url, json=payload)
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    last_error = httpx.HTTPStatusError(
+                        f"{response.status_code}",
+                        request=response.request,
+                        response=response,
+                    )
+                    if attempt < MAX_RETRIES:
+                        delay = _backoff_delay(attempt)
+                        logger.warning(
+                            "LLM call returned %d, retrying in %.1fs (attempt %d/%d)",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            MAX_RETRIES,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
+                last_error = exc
+                if attempt < MAX_RETRIES:
+                    delay = _backoff_delay(attempt)
+                    logger.warning(
+                        "LLM call failed (%s), retrying in %.1fs (attempt %d/%d)",
+                        type(exc).__name__,
+                        delay,
+                        attempt + 1,
+                        MAX_RETRIES,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+        raise last_error  # type: ignore[misc]
 
     async def chat_stream(
         self,
@@ -102,21 +172,21 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> AsyncGenerator[str, None]:
+        context_limit = await self.get_context_limit()
+        max_tokens = self._dynamic_max_tokens(messages, context_limit)
         payload = self._build_payload(messages, temperature, max_tokens, stream=True)
         url = f"{self.base_url}/chat/completions"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=self._headers()
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    chunk = json.loads(data_str)
-                    delta = chunk["choices"][0].get("delta", {})
-                    content = delta.get("content", "")
-                    if content:
-                        yield content
+        client = await self._get_client()
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data_str)
+                delta = chunk["choices"][0].get("delta", {})
+                content = delta.get("content", "")
+                if content:
+                    yield content

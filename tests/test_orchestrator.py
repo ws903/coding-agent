@@ -74,6 +74,11 @@ def orchestrator(tmp_path):
     mock_db.update_conversation_status = MagicMock()
     mock_db.get_messages = MagicMock(return_value=[])
 
+    mock_git = MagicMock()
+    mock_git.snapshot = MagicMock(return_value="abc1234" * 5 + "abcdef1234")
+    mock_git.rollback = MagicMock(return_value=True)
+    mock_git.is_repo = MagicMock(return_value=True)
+
     orch = Orchestrator(
         planner=mock_planner,
         executor=mock_executor,
@@ -81,6 +86,7 @@ def orchestrator(tmp_path):
         tools=mock_tools,
         db=mock_db,
         project_root=tmp_path,
+        git_ops=mock_git,
     )
     return orch
 
@@ -460,3 +466,47 @@ async def test_get_last_error_returns_unknown_when_no_failures(orchestrator):
     )
     error = orchestrator._get_last_error("conv123")
     assert error == "Unknown error"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_called_before_each_step(orchestrator):
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    assert orchestrator.git.snapshot.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_rollback_called_on_step_failure(orchestrator):
+    orchestrator.verifier.run = MagicMock(return_value=make_verification_fail())
+    orchestrator.planner.replan = AsyncMock(return_value=make_plan(1))
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    assert orchestrator.git.rollback.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_snapshot_failure_does_not_crash(orchestrator):
+    """If git snapshot raises, execution continues with None sha."""
+    orchestrator.git.snapshot = MagicMock(side_effect=Exception("git broken"))
+    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    assert result["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_replan_receives_completed_steps(orchestrator):
+    orchestrator.planner.generate_plan = AsyncMock(return_value=make_plan(3))
+    orchestrator.verifier.run = MagicMock(
+        side_effect=[
+            make_verification_pass(),
+            make_verification_fail(),
+            make_verification_fail(),
+            make_verification_pass(),
+        ]
+    )
+    orchestrator.planner.replan = AsyncMock(return_value=make_plan(1))
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    call_args = orchestrator.planner.replan.call_args
+    completed = call_args.kwargs.get("completed_steps") or call_args[1].get(
+        "completed_steps"
+    )
+    assert completed is not None
+    assert len(completed) == 1
+    assert completed[0]["step_id"] == 1
