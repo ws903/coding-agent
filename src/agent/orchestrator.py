@@ -65,6 +65,15 @@ class Orchestrator:
             }
 
         plan = response
+        if not plan.steps:
+            self.db.add_message(conv_id, "planner", f"Empty plan: {plan.goal}")
+            self.db.update_conversation_status(conv_id, "failed")
+            return {
+                "status": "failed",
+                "conv_id": conv_id,
+                "reason": "empty_plan",
+            }
+
         plan_version += 1
         self.db.save_plan(conv_id, plan_version, self._plan_to_text(plan))
         self.db.add_message(conv_id, "planner", self._plan_to_text(plan))
@@ -93,7 +102,9 @@ class Orchestrator:
 
             self.on_status(f"Replanning (attempt {replan_count}/{MAX_REPLANS})...")
             error_summary = self._get_last_error(conv_id)
-            plan = await self.planner.replan(task, plan, step.id, error_summary)
+            plan = await self.planner.replan(
+                task, plan, step.id, error_summary, project_context
+            )
             plan_version += 1
             self.db.save_plan(conv_id, plan_version, self._plan_to_text(plan))
             self.db.add_message(

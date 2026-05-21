@@ -393,6 +393,28 @@ async def test_run_skips_plan_approval_for_answer(orchestrator):
 
 
 @pytest.mark.asyncio
+async def test_run_returns_failed_for_empty_plan(orchestrator):
+    orchestrator.planner.generate_plan = AsyncMock(return_value=Plan(goal="", steps=[]))
+    result = await orchestrator.run("do something", mode="autonomous")
+    assert result["status"] == "failed"
+    assert result["reason"] == "empty_plan"
+    orchestrator.executor.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_replan_receives_project_context(orchestrator):
+    orchestrator.verifier.run = MagicMock(return_value=make_verification_fail())
+    orchestrator.planner.replan = AsyncMock(return_value=make_plan(1))
+
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    assert orchestrator.planner.replan.call_count >= 1
+    call_args = orchestrator.planner.replan.call_args
+    assert "File Tree" in call_args[0][4] or "File Tree" in call_args.kwargs.get(
+        "project_context", ""
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_last_error_returns_unknown_when_no_failures(orchestrator):
     """_get_last_error returns 'Unknown error' when no failure messages exist."""
     orchestrator.db.get_messages = MagicMock(

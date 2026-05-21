@@ -12,7 +12,7 @@ def parse_planner_response(text: str) -> Plan | Answer:
     if answer_match:
         return Answer(text=answer_match.group(1).strip())
 
-    return parse_plan(text)
+    return Answer(text=text.strip())
 
 
 def parse_plan(text: str) -> Plan:
