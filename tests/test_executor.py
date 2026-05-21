@@ -112,9 +112,10 @@ async def test_execute_includes_file_contents_in_prompt(
     step = Step(id=1, action="Change x", files_needed=["code.py"])
     await executor.execute(step)
 
-    call_args = mock_client.chat.call_args
+    call_args = mock_client.chat.call_args_list[0]
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[1]["content"]
+    # system(0) + 4 few-shot examples(1-4) + user(5)
+    user_msg = messages[5]["content"]
     assert "x = 1" in user_msg
 
 
@@ -124,7 +125,8 @@ async def test_execute_with_errors_includes_error(executor, mock_client, tmp_pat
     step = Step(id=1, action="Fix bug", files_needed=[])
     await executor.execute(step, errors="NameError: name 'foo' is not defined")
 
-    call_args = mock_client.chat.call_args
+    call_args = mock_client.chat.call_args_list[0]
     messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[1]["content"]
+    # system(0) + 4 few-shot examples(1-4) + user(5)
+    user_msg = messages[5]["content"]
     assert "NameError" in user_msg
