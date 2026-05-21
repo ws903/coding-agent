@@ -178,11 +178,10 @@ some text
         assert isinstance(result, Plan)
         assert result.goal == "Do the thing"
 
-    def test_neither_falls_back_to_empty_plan(self):
+    def test_neither_falls_back_to_answer(self):
         result = parse_planner_response("just rambling, no headers")
-        assert isinstance(result, Plan)
-        assert result.goal == ""
-        assert len(result.steps) == 0
+        assert isinstance(result, Answer)
+        assert result.text == "just rambling, no headers"
 
     def test_answer_strips_whitespace(self):
         text = "## Answer\n\n   Hello world.   \n\n"
