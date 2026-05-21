@@ -2,6 +2,7 @@
 
 import pytest
 
+from agent.command_policy import CommandBlocked
 from agent.sandbox import Sandbox, SecurityError
 
 
@@ -60,3 +61,22 @@ def test_run_command_cwd_is_project_root(tmp_path):
     result = sandbox.run_command('python3 -c "import os; print(os.getcwd())"')
     assert result.exit_code == 0
     assert str(tmp_path) in result.stdout
+
+
+def test_run_command_blocks_dangerous_command(tmp_path):
+    sandbox = Sandbox(tmp_path)
+    with pytest.raises(CommandBlocked):
+        sandbox.run_command("rm -rf /")
+
+
+def test_run_command_blocks_sudo(tmp_path):
+    sandbox = Sandbox(tmp_path)
+    with pytest.raises(CommandBlocked):
+        sandbox.run_command("sudo apt-get install git")
+
+
+def test_run_command_allows_safe_command(tmp_path):
+    sandbox = Sandbox(tmp_path)
+    result = sandbox.run_command("echo safe")
+    assert result.exit_code == 0
+    assert "safe" in result.stdout

@@ -49,3 +49,9 @@ class CommandResult:
 class VerificationResult:
     passed: bool
     details: list[CommandResult]
+
+
+@dataclass
+class ParseError:
+    errors: list[str]
+    raw_output: str

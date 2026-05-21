@@ -2,7 +2,15 @@ from importlib import resources
 
 from agent.llm_client import LLMClient
 from agent.models import Answer, Plan
-from agent.parser import parse_plan, parse_planner_response
+from agent.parser import parse_plan, parse_planner_response, validate_plan
+
+MAX_PARSE_RETRIES = 2
+
+RETRY_PROMPT = (
+    "Your previous response could not be parsed. Errors:\n{errors}\n\n"
+    "Please respond again using EXACTLY the format from your instructions. "
+    "Do not add text outside the format."
+)
 
 
 def _load_prompt() -> str:
@@ -29,7 +37,32 @@ class Planner:
             },
         ]
         response = await self.llm.chat(messages, temperature=0.3)
-        return parse_planner_response(response)
+        result = parse_planner_response(response)
+
+        if isinstance(result, Answer):
+            return result
+
+        errors = validate_plan(result)
+        if not errors:
+            return result
+
+        for _ in range(MAX_PARSE_RETRIES):
+            messages.append({"role": "assistant", "content": response})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": RETRY_PROMPT.format(errors="\n".join(errors)),
+                }
+            )
+            response = await self.llm.chat(messages, temperature=0.2)
+            result = parse_planner_response(response)
+            if isinstance(result, Answer):
+                return result
+            errors = validate_plan(result)
+            if not errors:
+                return result
+
+        return result
 
     async def replan(
         self,
@@ -57,4 +90,24 @@ class Planner:
             },
         ]
         response = await self.llm.chat(messages, temperature=0.3)
-        return parse_plan(response)
+        plan = parse_plan(response)
+
+        errors = validate_plan(plan)
+        if not errors:
+            return plan
+
+        for _ in range(MAX_PARSE_RETRIES):
+            messages.append({"role": "assistant", "content": response})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": RETRY_PROMPT.format(errors="\n".join(errors)),
+                }
+            )
+            response = await self.llm.chat(messages, temperature=0.2)
+            plan = parse_plan(response)
+            errors = validate_plan(plan)
+            if not errors:
+                return plan
+
+        return plan

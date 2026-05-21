@@ -101,3 +101,27 @@ def parse_edits(
         return edits, commands
 
     return edits
+
+
+def validate_plan(plan: Plan) -> list[str]:
+    errors = []
+    if not plan.steps:
+        errors.append("Plan has 0 steps")
+    for step in plan.steps:
+        if not step.action or not step.action.strip():
+            errors.append(f"Step {step.id} has no action description")
+    return errors
+
+
+def validate_edits(edits: list[FileEdit]) -> list[str]:
+    errors = []
+    if not edits:
+        errors.append("No edits parsed from response")
+    for i, edit in enumerate(edits):
+        if not edit.path:
+            errors.append(f"Edit {i + 1} missing file path")
+        if edit.action == "search_replace" and edit.search is None:
+            errors.append(f"Edit {i + 1} missing SEARCH block")
+        if edit.action in ("create", "rewrite") and edit.content is None:
+            errors.append(f"Edit {i + 1} missing content")
+    return errors

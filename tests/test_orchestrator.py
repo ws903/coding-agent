@@ -415,6 +415,41 @@ async def test_replan_receives_project_context(orchestrator):
 
 
 @pytest.mark.asyncio
+async def test_blocked_command_logged_and_skipped(orchestrator):
+    from agent.command_policy import CommandBlocked
+
+    result_with_cmd = ExecutionResult(
+        file_edits=[FileEdit(path="test.py", action="create", content="pass")],
+        commands=["rm -rf /"],
+        explanation="done",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=result_with_cmd)
+    orchestrator.tools.sandbox.run_command = MagicMock(
+        side_effect=CommandBlocked("rm -rf /", "destructive")
+    )
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    blocked_calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and "Command blocked" in c[0][2]
+    ]
+    assert len(blocked_calls) >= 1
+
+
+def test_build_project_context_includes_env(orchestrator):
+    context = orchestrator._build_project_context()
+    assert "<env>" in context
+    assert "os:" in context
+    assert "File Tree" in context
+
+
+def test_detect_environment_cached(orchestrator):
+    env1 = orchestrator._detect_environment()
+    env2 = orchestrator._detect_environment()
+    assert env1 is env2
+
+
+@pytest.mark.asyncio
 async def test_get_last_error_returns_unknown_when_no_failures(orchestrator):
     """_get_last_error returns 'Unknown error' when no failure messages exist."""
     orchestrator.db.get_messages = MagicMock(

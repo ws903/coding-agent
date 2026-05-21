@@ -3,8 +3,17 @@ from importlib import resources
 
 from agent.llm_client import LLMClient
 from agent.models import Step, ExecutionResult
-from agent.parser import parse_edits
+from agent.parser import parse_edits, validate_edits
 from agent.tools import FileTools
+
+MAX_PARSE_RETRIES = 2
+
+RETRY_PROMPT = (
+    "Your previous response could not be parsed. Errors:\n{errors}\n\n"
+    "Please respond again using EXACTLY the edit format from your instructions "
+    "(SEARCH/REPLACE, CREATE, or REWRITE blocks). "
+    "Do not add text outside the format."
+)
 
 
 def _load_prompt() -> str:
@@ -42,6 +51,21 @@ class Executor:
 
         response = await self.llm.chat(messages, temperature=0.2)
         edits, commands = parse_edits(response, extract_commands=True)
+
+        parse_errors = validate_edits(edits)
+        for _ in range(MAX_PARSE_RETRIES):
+            if not parse_errors:
+                break
+            messages.append({"role": "assistant", "content": response})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": RETRY_PROMPT.format(errors="\n".join(parse_errors)),
+                }
+            )
+            response = await self.llm.chat(messages, temperature=0.2)
+            edits, commands = parse_edits(response, extract_commands=True)
+            parse_errors = validate_edits(edits)
 
         return ExecutionResult(
             file_edits=edits,

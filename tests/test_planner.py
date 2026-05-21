@@ -130,3 +130,36 @@ async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
     assert "Step 1: Create endpoint" in user_msg
     assert "Step 2: Write tests" in user_msg
     assert len(plan.steps) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_plan_retries_on_empty_parse(planner, mock_client):
+    """When the first response has ## Plan: but no steps, planner retries."""
+    bad_response = "## Plan: do something\n\nno steps here\n"
+    mock_client.chat = AsyncMock(side_effect=[bad_response, MOCK_PLAN_RESPONSE])
+    result = await planner.generate_plan("Add feature", "file tree")
+    assert isinstance(result, Plan)
+    assert len(result.steps) == 2
+    assert mock_client.chat.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_plan_returns_best_effort_after_max_retries(
+    planner, mock_client
+):
+    """After MAX_PARSE_RETRIES, returns whatever was last parsed."""
+    bad_response = "## Plan: do something\n\nno steps\n"
+    mock_client.chat = AsyncMock(return_value=bad_response)
+    result = await planner.generate_plan("Add feature", "file tree")
+    assert isinstance(result, Plan)
+    assert mock_client.chat.call_count == 3  # 1 initial + 2 retries
+
+
+@pytest.mark.asyncio
+async def test_replan_retries_on_empty_parse(planner, mock_client):
+    bad_response = "## Plan: revised\n\nnothing\n"
+    mock_client.chat = AsyncMock(side_effect=[bad_response, MOCK_REPLAN_RESPONSE])
+    original_plan = Plan(goal="goal", steps=[])
+    result = await planner.replan("task", original_plan, 1, "error")
+    assert len(result.steps) == 2
+    assert mock_client.chat.call_count == 2
