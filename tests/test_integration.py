@@ -14,12 +14,18 @@ from agent.tools import FileTools
 from agent.verifier import Verifier
 
 
-PLAN_RESPONSE = """## Plan: Create hello script
-
-### Step 1: Create hello.py
-- Files needed: hello.py
-- Verify: python3 hello.py
-"""
+PLAN_RESPONSE = {
+    "kind": "plan",
+    "goal": "Create hello script",
+    "steps": [
+        {
+            "id": 1,
+            "action": "Create hello.py",
+            "files_needed": ["hello.py"],
+            "verify_command": "python3 hello.py",
+        }
+    ],
+}
 
 
 def _create_file_msg(path: str, content: str) -> dict:
@@ -48,7 +54,7 @@ async def test_full_autonomous_run(tmp_path):
     db = AgentDB(tmp_path / ".agent" / "agent.db")
 
     mock_llm = AsyncMock(spec=LLMClient)
-    mock_llm.chat = AsyncMock(return_value=PLAN_RESPONSE)
+    mock_llm.chat_json = AsyncMock(return_value=PLAN_RESPONSE)
     mock_llm.chat_with_tools = AsyncMock(
         side_effect=[
             _create_file_msg("hello.py", 'print("hello world")\n'),
@@ -93,15 +99,21 @@ async def test_full_autonomous_run(tmp_path):
 async def test_full_run_with_verification(tmp_path):
     db = AgentDB(tmp_path / ".agent" / "agent.db")
 
-    plan_response = """## Plan: Create and test script
-
-### Step 1: Create greet.py
-- Files needed: greet.py
-- Verify: python3 greet.py
-"""
+    plan_response = {
+        "kind": "plan",
+        "goal": "Create and test script",
+        "steps": [
+            {
+                "id": 1,
+                "action": "Create greet.py",
+                "files_needed": ["greet.py"],
+                "verify_command": "python3 greet.py",
+            }
+        ],
+    }
 
     mock_llm = AsyncMock(spec=LLMClient)
-    mock_llm.chat = AsyncMock(return_value=plan_response)
+    mock_llm.chat_json = AsyncMock(return_value=plan_response)
     mock_llm.chat_with_tools = AsyncMock(
         side_effect=[
             _create_file_msg("greet.py", 'print("greetings")\n'),

@@ -37,6 +37,26 @@ def _backoff_delay(attempt: int) -> float:
     return delay + jitter
 
 
+def _parse_json_content(content: str) -> dict:
+    """Tolerant JSON parser: strips ```json fences and finds the outer object."""
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else s
+        if s.endswith("```"):
+            s = s.rsplit("```", 1)[0]
+        s = s.strip()
+    if s.startswith("json\n"):
+        s = s[5:]
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end > start:
+            return json.loads(s[start : end + 1])
+        raise
+
+
 class LLMClient:
     def __init__(
         self,
@@ -137,6 +157,23 @@ class LLMClient:
         data = await self._post_chat(messages, temperature, max_tokens)
         return data["choices"][0]["message"]["content"]
 
+    async def chat_json(
+        self,
+        messages: list[dict],
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> dict:
+        """Chat with response_format=json_object; returns parsed dict.
+
+        Raises ValueError if the response isn't valid JSON. Caller is
+        expected to retry or fall back as appropriate.
+        """
+        data = await self._post_chat(
+            messages, temperature, max_tokens, response_format="json_object"
+        )
+        content = data["choices"][0]["message"]["content"] or ""
+        return _parse_json_content(content)
+
     async def chat_with_tools(
         self,
         messages: list[dict],
@@ -220,12 +257,15 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
         tools: list[dict] | None = None,
+        response_format: str | None = None,
     ) -> dict:
         context_limit = await self.get_context_limit()
         max_tokens = self._dynamic_max_tokens(messages, context_limit)
         payload = self._build_payload(messages, temperature, max_tokens, stream=False)
         if tools:
             payload["tools"] = tools
+        if response_format:
+            payload["response_format"] = {"type": response_format}
         url = f"{self.base_url}/chat/completions"
         client = await self._get_client()
 

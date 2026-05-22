@@ -397,6 +397,63 @@ async def test_chat_with_tools_stream_captures_tool_calls(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_json_returns_parsed_dict(client):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [{"message": {"content": '{"kind": "answer", "answer": "hi"}'}}]
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    result = await client.chat_json([{"role": "user", "content": "x"}])
+    assert result == {"kind": "answer", "answer": "hi"}
+    # response_format json_object should be in the payload
+    payload = mock_client.post.call_args.kwargs["json"]
+    assert payload["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_chat_json_strips_code_fences(client):
+    """Some models wrap JSON in ```json ... ``` fences -- strip them."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [
+            {"message": {"content": '```json\n{"kind": "answer", "answer": "ok"}\n```'}}
+        ]
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    result = await client.chat_json([{"role": "user", "content": "x"}])
+    assert result["answer"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_chat_json_raises_on_unparseable(client):
+    import json as _json
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"choices": [{"message": {"content": "not json at all"}}]}
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    with pytest.raises(_json.JSONDecodeError):
+        await client.chat_json([{"role": "user", "content": "x"}])
+
+
+@pytest.mark.asyncio
 async def test_chat_records_usage_without_usage_field(client):
     resp = MagicMock()
     resp.status_code = 200
