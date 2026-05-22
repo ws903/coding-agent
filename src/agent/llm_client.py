@@ -134,9 +134,32 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> str:
+        data = await self._post_chat(messages, temperature, max_tokens)
+        return data["choices"][0]["message"]["content"]
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+    ) -> dict:
+        """Returns the full assistant message dict including any tool_calls."""
+        data = await self._post_chat(messages, temperature, max_tokens, tools=tools)
+        return data["choices"][0]["message"]
+
+    async def _post_chat(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        tools: list[dict] | None = None,
+    ) -> dict:
         context_limit = await self.get_context_limit()
         max_tokens = self._dynamic_max_tokens(messages, context_limit)
         payload = self._build_payload(messages, temperature, max_tokens, stream=False)
+        if tools:
+            payload["tools"] = tools
         url = f"{self.base_url}/chat/completions"
         client = await self._get_client()
 
@@ -164,7 +187,7 @@ class LLMClient:
                 response.raise_for_status()
                 data = response.json()
                 self._record_usage(data)
-                return data["choices"][0]["message"]["content"]
+                return data
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
                 last_error = exc
                 if attempt < MAX_RETRIES:
