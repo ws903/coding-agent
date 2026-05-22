@@ -205,6 +205,20 @@ def test_executor_system_prompt_includes_skill_catalog(mock_client, tools, tmp_p
 def test_executor_system_prompt_unchanged_when_no_skills(mock_client, tools):
     executor = Executor(mock_client, tools)
     assert "Available skills" not in executor.system_prompt
+    assert "Available subagents" not in executor.system_prompt
+
+
+def test_executor_system_prompt_includes_agent_catalog(mock_client, tools, tmp_path):
+    from agent.agents_manager import AgentsManager
+
+    agents_dir = tmp_path / ".agent" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: code-reviewer\ndescription: Reviews the diff\n---\nBe critical."
+    )
+    executor = Executor(mock_client, tools, agents=AgentsManager(tmp_path))
+    assert "code-reviewer" in executor.system_prompt
+    assert "Reviews the diff" in executor.system_prompt
 
 
 @pytest.mark.asyncio

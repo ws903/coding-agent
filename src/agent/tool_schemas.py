@@ -188,4 +188,31 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "spawn_agent",
+            "description": (
+                "Dispatch a focused subagent (read-only) with its own context. "
+                "Use this for code review, devil's-advocate critique, "
+                "debugging investigation, or any sub-task that benefits from "
+                "a fresh perspective. Subagents return text only; they cannot "
+                "make edits or spawn further agents."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "description": "Subagent role name from the 'Available subagents' section.",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "What the subagent should investigate or produce.",
+                    },
+                },
+                "required": ["role", "task"],
+            },
+        },
+    },
 ]

@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 
+from agent.agents_manager import AgentsManager
 from agent.mcp_manager import MCPManager
 from agent.models import FileEdit
 from agent.skills_manager import SkillsManager
+from agent.subagent_runner import SubagentRunner
 from agent.tools import FileTools
 
 MAX_OBSERVATION_CHARS = 3000
@@ -33,10 +35,14 @@ class ToolRunner:
         tools: FileTools,
         mcp: MCPManager | None = None,
         skills: SkillsManager | None = None,
+        agents: AgentsManager | None = None,
+        subagent_runner: SubagentRunner | None = None,
     ):
         self.tools = tools
         self.mcp = mcp
         self.skills = skills
+        self.agents = agents
+        self.subagent_runner = subagent_runner
         self.edits: list[FileEdit] = []
         self.commands: list[str] = []
 
@@ -52,6 +58,9 @@ class ToolRunner:
         if self.mcp is not None and self.mcp.owns(name):
             return _truncate(await self.mcp.call(name, args))
 
+        if name == "spawn_agent":
+            return await self._spawn_agent(args)
+
         handler = self._HANDLERS.get(name)
         if handler is None:
             return f"Error: unknown tool '{name}'"
@@ -59,6 +68,22 @@ class ToolRunner:
             return handler(self, args)
         except Exception as exc:
             return f"Error: {type(exc).__name__}: {exc}"
+
+    async def _spawn_agent(self, args: dict) -> str:
+        if self.agents is None or self.subagent_runner is None:
+            return "Error: no subagent roles configured for this project"
+        role_name = args.get("role", "")
+        task = args.get("task", "")
+        role = self.agents.get(role_name)
+        if role is None:
+            available = ", ".join(r.name for r in self.agents.roles) or "(none)"
+            return (
+                f"Error: subagent role '{role_name}' not found. Available: {available}"
+            )
+        try:
+            return _truncate(await self.subagent_runner.run(role, task))
+        except Exception as exc:
+            return f"Error: subagent failed: {type(exc).__name__}: {exc}"
 
     def _read_file(self, args: dict) -> str:
         path = args["path"]

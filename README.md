@@ -24,6 +24,7 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 - **Streaming Output** -- Tokens stream into the REPL in real-time as the executor reasons
 - **MCP Support** -- Extend the executor with [Model Context Protocol](https://modelcontextprotocol.io/) servers (GitHub, filesystem, Postgres, etc.) via a `.mcp.json` config
 - **Skills** -- User-extensible markdown skills in `.agent/skills/`. Progressive disclosure: only descriptions in context until the model calls `read_skill(name=...)`
+- **Subagents** -- User-defined roles in `.agent/agents/`. Executor can `spawn_agent(role, task)` for code review, devil's-advocate, debugging -- fresh context, read-only tools
 - **Two Modes** -- Interactive REPL with plan approval, or autonomous fire-and-forget
 - **Pluggable Models** -- Swap models by changing a URL and model name. No code changes
 - **Pluggable Backends** -- Ollama, TabbyAPI/ExLlamaV3, LM Studio, vLLM, or any OpenAI-compatible server
@@ -195,6 +196,35 @@ description: Review the current diff for correctness, security, and style.
 Only `name` and `description` are read from the frontmatter (everything else is ignored, so future fields won't break compatibility). If `name` is omitted, the filename or directory name is used.
 
 Skills are user-extensible -- they live in your project, not in the coding-agent repo. The agent never modifies them.
+
+### Subagents
+
+Drop role definitions into `.agent/agents/` and the executor can dispatch them on demand via the `spawn_agent(role, task)` tool. Each subagent runs with its own fresh conversation context, a **read-only** tool subset (no edits, no recursion), and the role's system prompt. It returns text the executor incorporates into its own reasoning.
+
+Use for: focused code review, devil's-advocate critique, debugging investigation, anything that benefits from a clean perspective without polluting the parent's context.
+
+```
+.agent/agents/
+  code-reviewer.md                # single-file role
+  debug/
+    AGENT.md                      # directory role
+```
+
+A role is a markdown file with frontmatter + a body that becomes the role's system prompt:
+
+```markdown
+---
+name: code-reviewer
+description: Critical code reviewer. Spots correctness, safety, and ergonomics issues.
+---
+You are a strict code reviewer. When given a file or diff:
+1. Read it carefully.
+2. Identify any correctness bugs or missing input validation.
+3. Reply with at most three concrete issues, one per line prefixed `ISSUE:`.
+Do not propose fixes; the parent agent will handle that.
+```
+
+Subagents are restricted to `read_file`, `list_files`, `search_text` -- they cannot edit files or spawn other agents. This keeps them focused and prevents runaway recursion.
 
 ### MCP Servers
 
@@ -394,9 +424,9 @@ uvx ruff format src/ tests/          # Format
 
 - [x] **Native tool calling** -- Executor uses structured OpenAI-format `tool_calls` (PR #21)
 - [x] **Streaming output** -- Tokens stream live in the REPL (PR #22)
-- [x] **MCP integration** -- External tools via Model Context Protocol servers (this PR)
-- [x] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (this PR)
-- [ ] **Subagent dispatch** -- Spawn focused sub-LLMs for code-review, devil's-advocate, debug
+- [x] **MCP integration** -- External tools via Model Context Protocol servers (PR #23)
+- [x] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (PR #24)
+- [x] **Subagent dispatch** -- User-defined roles in `.agent/agents/`, spawned via `spawn_agent` tool (this PR)
 - [ ] **Codebase indexing** -- Tree-sitter map (lazy) so the planner sees structure not just files
 - [ ] **Structured output** -- Grammar-constrained generation (GBNF/JSON schema) for edits
 - [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 prefix caching across executor calls
