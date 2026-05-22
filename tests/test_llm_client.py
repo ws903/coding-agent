@@ -330,6 +330,80 @@ async def test_chat_without_tools_omits_tools_field(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_json_think_true_hits_v1_with_response_format(client):
+    """think=True (default) goes through OpenAI-compat /v1 with response_format=json_object."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [{"message": {"content": '{"kind":"answer","answer":"hi"}'}}]
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    result = await client.chat_json([{"role": "user", "content": "x"}], think=True)
+
+    assert result == {"kind": "answer", "answer": "hi"}
+    call_args = mock_client.post.call_args
+    url = call_args.args[0]
+    payload = call_args.kwargs["json"]
+    assert url.endswith("/v1/chat/completions"), url
+    assert payload["response_format"] == {"type": "json_object"}
+    assert "think" not in payload
+
+
+@pytest.mark.asyncio
+async def test_chat_json_think_false_hits_native_api_chat(client):
+    """think=False goes through native /api/chat with think:false + format:json."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "message": {"content": '{"kind":"plan","goal":"g","steps":[]}'},
+        "done": True,
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    result = await client.chat_json([{"role": "user", "content": "x"}], think=False)
+
+    assert result["kind"] == "plan"
+    call_args = mock_client.post.call_args
+    url = call_args.args[0]
+    payload = call_args.kwargs["json"]
+    assert url.endswith("/api/chat"), url
+    assert payload["think"] is False
+    assert payload["format"] == "json"
+    # think:false implies single-shot (no SSE), and our impl uses stream=False.
+    assert payload["stream"] is False
+
+
+@pytest.mark.asyncio
+async def test_chat_json_think_false_strips_code_fences(client):
+    """Tolerant JSON parsing applies on the native path too."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "message": {
+            "content": '```json\n{"kind":"answer","answer":"ok"}\n```',
+        },
+        "done": True,
+    }
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    result = await client.chat_json([{"role": "user", "content": "x"}], think=False)
+    assert result["answer"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_chat_with_tools_stream_yields_content_and_assembles_message(client):
     async def mock_aiter_lines():
         lines = [

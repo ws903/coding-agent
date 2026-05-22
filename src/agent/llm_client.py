@@ -162,16 +162,62 @@ class LLMClient:
         messages: list[dict],
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        think: bool = True,
     ) -> dict:
-        """Chat with response_format=json_object; returns parsed dict.
+        """Chat with JSON-mode output; returns parsed dict.
 
-        Raises ValueError if the response isn't valid JSON. Caller is
-        expected to retry or fall back as appropriate.
+        When `think=True` (default) uses the OpenAI-compat /v1 endpoint
+        with `response_format=json_object`. The model's reasoning phase
+        (delta.reasoning) runs in full, which improves plan quality on
+        complex tasks but can add 60-120s of latency on a thinking model
+        like qwen3.6.
+
+        When `think=False` uses the native /api/chat endpoint with
+        `think: false` and `format: "json"`. Skips the reasoning phase
+        entirely -- measured ~7x faster end-to-end on planner-style
+        prompts. Some quality trade-off on intricate multi-step plans.
+
+        Raises ValueError on unparseable JSON.
         """
-        data = await self._post_chat(
-            messages, temperature, max_tokens, response_format="json_object"
+        if think:
+            data = await self._post_chat(
+                messages, temperature, max_tokens, response_format="json_object"
+            )
+            content = data["choices"][0]["message"]["content"] or ""
+            return _parse_json_content(content)
+        return await self._chat_json_native_no_think(messages, temperature)
+
+    async def _chat_json_native_no_think(
+        self, messages: list[dict], temperature: float
+    ) -> dict:
+        """Native /api/chat with think:false + format:json. Non-retried;
+        intended for cheap structured-output paths where speed matters
+        more than transient-failure resilience."""
+        ollama_base = self.base_url.replace("/v1", "")
+        url = f"{ollama_base}/api/chat"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "format": "json",
+            "options": {"temperature": temperature},
+        }
+        client = await self._get_client()
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        # Ollama native uses prompt_eval_count/eval_count; translate to the
+        # OpenAI-style usage shape _record_usage expects.
+        self._record_usage(
+            {
+                "usage": {
+                    "prompt_tokens": data.get("prompt_eval_count", 0),
+                    "completion_tokens": data.get("eval_count", 0),
+                }
+            }
         )
-        content = data["choices"][0]["message"]["content"] or ""
+        content = data.get("message", {}).get("content") or ""
         return _parse_json_content(content)
 
     async def chat_with_tools(
