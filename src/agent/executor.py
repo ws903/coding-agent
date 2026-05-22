@@ -3,6 +3,7 @@ from collections.abc import Callable
 from importlib import resources
 
 from agent.llm_client import LLMClient
+from agent.mcp_manager import MCPManager
 from agent.models import ExecutionResult, Step
 from agent.tool_runner import ToolRunner
 from agent.tool_schemas import TOOLS
@@ -25,28 +26,32 @@ class Executor:
         llm_client: LLMClient,
         tools: FileTools,
         on_token: Callable[[str], None] | None = None,
+        mcp: MCPManager | None = None,
     ):
         self.llm = llm_client
         self.tools = tools
         self.system_prompt = _load_prompt()
         self.on_token = on_token
+        self.mcp = mcp
 
     async def execute(self, step: Step, errors: str | None = None) -> ExecutionResult:
-        runner = ToolRunner(self.tools)
+        runner = ToolRunner(self.tools, mcp=self.mcp)
         user_content = self._build_user_content(step, errors)
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_content},
         ]
 
+        tools = TOOLS + (self.mcp.tools if self.mcp else [])
+
         last_content = ""
         for _ in range(MAX_TOOL_ITERATIONS):
             if self.on_token is not None:
                 msg = await self.llm.chat_with_tools_stream(
-                    messages, TOOLS, on_token=self.on_token, temperature=0.2
+                    messages, tools, on_token=self.on_token, temperature=0.2
                 )
             else:
-                msg = await self.llm.chat_with_tools(messages, TOOLS, temperature=0.2)
+                msg = await self.llm.chat_with_tools(messages, tools, temperature=0.2)
             last_content = msg.get("content") or ""
             tool_calls = msg.get("tool_calls") or []
 
@@ -56,7 +61,7 @@ class Executor:
                 break
 
             for tc in tool_calls:
-                result = runner.dispatch(tc)
+                result = await runner.dispatch(tc)
                 messages.append(
                     {
                         "role": "tool",

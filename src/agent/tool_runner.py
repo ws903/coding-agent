@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 
+from agent.mcp_manager import MCPManager
 from agent.models import FileEdit
 from agent.tools import FileTools
 
@@ -26,12 +27,13 @@ def _truncate(text: str, max_chars: int = MAX_OBSERVATION_CHARS) -> str:
 
 
 class ToolRunner:
-    def __init__(self, tools: FileTools):
+    def __init__(self, tools: FileTools, mcp: MCPManager | None = None):
         self.tools = tools
+        self.mcp = mcp
         self.edits: list[FileEdit] = []
         self.commands: list[str] = []
 
-    def dispatch(self, tool_call: dict) -> str:
+    async def dispatch(self, tool_call: dict) -> str:
         """Execute a single tool call. Returns the result string for the LLM."""
         fn = tool_call.get("function", {})
         name = fn.get("name", "")
@@ -39,6 +41,9 @@ class ToolRunner:
             args = json.loads(fn.get("arguments") or "{}")
         except json.JSONDecodeError as exc:
             return f"Error: could not parse arguments: {exc}"
+
+        if self.mcp is not None and self.mcp.owns(name):
+            return _truncate(await self.mcp.call(name, args))
 
         handler = self._HANDLERS.get(name)
         if handler is None:
