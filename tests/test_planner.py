@@ -68,6 +68,52 @@ async def test_generate_plan(planner, mock_client):
 
 
 @pytest.mark.asyncio
+async def test_generate_plan_defaults_to_think_false(planner, mock_client, monkeypatch):
+    """Default behavior: planner calls chat_json with think=False so qwen3.6
+    skips its 60-120s thinking phase on local hardware."""
+    monkeypatch.delenv("AGENT_PLANNER_THINK", raising=False)
+    await planner.generate_plan("anything", "context")
+    assert mock_client.chat_json.call_args.kwargs["think"] is False
+
+
+@pytest.mark.asyncio
+async def test_generate_plan_respects_AGENT_PLANNER_THINK_env(
+    planner, mock_client, monkeypatch
+):
+    """Setting AGENT_PLANNER_THINK=true re-enables thinking-mode planning
+    for users who prefer quality over latency on complex tasks."""
+    monkeypatch.setenv("AGENT_PLANNER_THINK", "true")
+    await planner.generate_plan("anything", "context")
+    assert mock_client.chat_json.call_args.kwargs["think"] is True
+
+
+@pytest.mark.asyncio
+async def test_AGENT_PLANNER_THINK_accepts_multiple_truthy_values(
+    planner, mock_client, monkeypatch
+):
+    """Common truthy values all enable thinking (matches Python env-flag idiom)."""
+    for value in ["1", "true", "True", "TRUE", "yes", "YES"]:
+        monkeypatch.setenv("AGENT_PLANNER_THINK", value)
+        mock_client.chat_json.reset_mock()
+        mock_client.chat_json.return_value = PLAN_RESPONSE
+        await planner.generate_plan("anything", "context")
+        assert mock_client.chat_json.call_args.kwargs["think"] is True, value
+
+
+@pytest.mark.asyncio
+async def test_AGENT_PLANNER_THINK_falsy_values_keep_default_off(
+    planner, mock_client, monkeypatch
+):
+    """Falsy values keep thinking off (the secure default)."""
+    for value in ["", "0", "false", "no", "off", "anything-else"]:
+        monkeypatch.setenv("AGENT_PLANNER_THINK", value)
+        mock_client.chat_json.reset_mock()
+        mock_client.chat_json.return_value = PLAN_RESPONSE
+        await planner.generate_plan("anything", "context")
+        assert mock_client.chat_json.call_args.kwargs["think"] is False, value
+
+
+@pytest.mark.asyncio
 async def test_generate_plan_sends_system_prompt(planner, mock_client):
     await planner.generate_plan("task", "context")
     messages = mock_client.chat_json.call_args.args[0]

@@ -12,3 +12,4 @@ Read these when you're considering a change that touches the same surface — th
 | [0004](0004-filesystem-discovered-managers.md) | Filesystem-discovered managers for skills/agents/MCP |
 | [0005](0005-hybrid-exit-strategy.md) | Hybrid bare-word + slash exit |
 | [0006](0006-llm-intent-classifier.md) | LLM-based intent classifier for ambiguous input |
+| [0007](0007-planner-no-think-default.md) | Planner runs with `think:false` by default (~7× speedup) |

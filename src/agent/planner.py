@@ -17,12 +17,21 @@ or non-JSON despite the constraint.
 """
 
 import json
+import os
 from importlib import resources
 
 from agent.llm_client import LLMClient
 from agent.models import Answer, Plan, Step
 
 MAX_PARSE_RETRIES = 2
+
+
+def _planner_think_enabled() -> bool:
+    """Default off: thinking mode adds 60-120s per planner call on qwen3.6.
+    Opt back in with AGENT_PLANNER_THINK=true for complex multi-step tasks
+    where plan quality matters more than latency."""
+    return os.environ.get("AGENT_PLANNER_THINK", "").lower() in {"1", "true", "yes"}
+
 
 RETRY_PROMPT = (
     "Your previous response was missing required fields or had the wrong "
@@ -159,8 +168,9 @@ class Planner:
         return result
 
     async def _planner_loop(self, messages: list[dict]) -> Plan | Answer:
+        think = _planner_think_enabled()
         try:
-            data = await self.llm.chat_json(messages, temperature=0.3)
+            data = await self.llm.chat_json(messages, temperature=0.3, think=think)
             result, errors = _validate_response(data)
         except (json.JSONDecodeError, ValueError) as exc:
             data, result, errors = {}, None, [f"JSON parse failed: {exc}"]
@@ -178,7 +188,7 @@ class Planner:
                 }
             )
             try:
-                data = await self.llm.chat_json(messages, temperature=0.2)
+                data = await self.llm.chat_json(messages, temperature=0.2, think=think)
                 result, errors = _validate_response(data)
             except (json.JSONDecodeError, ValueError) as exc:
                 data, result, errors = {}, None, [f"JSON parse failed: {exc}"]

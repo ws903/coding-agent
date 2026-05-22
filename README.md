@@ -155,6 +155,10 @@ For things that should follow you across all projects (e.g. pointing at a remote
 # coding-agent/.env  (already in .gitignore)
 AGENT_BASE_URL=http://192.168.1.42:11434/v1
 AGENT_MODEL=qwen3.6:35b
+# Optional: opt into thinking-mode planning (slower but more thorough on
+# complex multi-step refactors). Default off because qwen3.6 thinking
+# adds ~100s of latency on local MoE-offload hardware. See ADR 0007.
+# AGENT_PLANNER_THINK=true
 ```
 
 The agent loads this on every invocation, so `uv run agent` from any project picks up your config.
