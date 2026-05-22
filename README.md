@@ -359,6 +359,8 @@ docker run -d `
 
 First-run setup at `http://localhost:8080` -- the first account created becomes admin.
 
+For a desktop launcher on Windows, use [`scripts/start-open-webui.bat`](scripts/start-open-webui.bat) -- double-click to start the container (creates it on first run) and open the browser.
+
 ## License
 
 [MIT](LICENSE)
