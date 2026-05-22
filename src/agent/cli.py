@@ -32,6 +32,21 @@ DEFAULT_BASE_URL = "http://localhost:11434/v1"
 console = Console()
 
 
+def _find_project_root(start: Path) -> Path:
+    """Walk up from `start` to the nearest directory containing `.git`.
+
+    Falls back to `start` if no `.git` is found. Lets the user `cd` anywhere
+    inside their repo (including subdirectories) and invoke the agent without
+    needing to pass --project explicitly.
+    """
+    start = start.resolve()
+    candidate = start if start.is_dir() else start.parent
+    for path in [candidate, *candidate.parents]:
+        if (path / ".git").exists():
+            return path
+    return candidate
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="agent",
@@ -147,7 +162,7 @@ SLASH_COMMANDS = {
 
 
 async def run_interactive(args: argparse.Namespace) -> None:
-    project_root = Path(args.project).resolve()
+    project_root = _find_project_root(Path(args.project))
     orch = build_orchestrator(
         project_root,
         args.base_url,
@@ -228,7 +243,7 @@ async def run_autonomous(args: argparse.Namespace) -> int:
         console.print("[red]--task is required for autonomous mode[/red]")
         return 1
 
-    project_root = Path(args.project).resolve()
+    project_root = _find_project_root(Path(args.project))
     orch = build_orchestrator(
         project_root, args.base_url, args.model, max_steps=args.max_steps
     )

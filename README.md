@@ -135,7 +135,7 @@ uv run agent --task "refactor the database module to use connection pooling" --a
 
 | Flag         | Default                          | Description                          |
 |--------------|----------------------------------|--------------------------------------|
-| `--project`  | `.`                              | Project root directory               |
+| `--project`  | `.` (walks up to nearest `.git`) | Project root directory. If omitted, walks up from CWD to find the repo root |
 | `--auto`     | off                              | Run in autonomous mode               |
 | `--task`     | --                               | Task description (required w/ `--auto`) |
 | `--model`    | `qwen3.6:35b` (env: `AGENT_MODEL`)   | Model name                           |

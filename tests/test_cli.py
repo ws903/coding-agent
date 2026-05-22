@@ -9,6 +9,7 @@ import pytest
 from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
+    _find_project_root,
     _show_config,
     _show_history,
     build_orchestrator,
@@ -26,6 +27,25 @@ def _mock_orch() -> MagicMock:
     m.executor.mcp.close = AsyncMock()
     m.executor.mcp.connected_servers = []
     return m
+
+
+def test_find_project_root_walks_up_to_git_dir(tmp_path):
+    (tmp_path / ".git").mkdir()
+    nested = tmp_path / "src" / "deep" / "nested"
+    nested.mkdir(parents=True)
+    assert _find_project_root(nested) == tmp_path.resolve()
+
+
+def test_find_project_root_returns_input_when_no_git(tmp_path):
+    nested = tmp_path / "no_git_here"
+    nested.mkdir()
+    # No .git anywhere in the chain -- returns the original.
+    assert _find_project_root(nested) == nested.resolve()
+
+
+def test_find_project_root_uses_dir_itself_when_repo_root(tmp_path):
+    (tmp_path / ".git").mkdir()
+    assert _find_project_root(tmp_path) == tmp_path.resolve()
 
 
 def test_parse_args_interactive():
