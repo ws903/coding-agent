@@ -10,7 +10,9 @@ from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
     _find_project_root,
+    _llm_classify_intent,
     _looks_like_chat,
+    _route_input,
     _show_config,
     _show_history,
     build_orchestrator,
@@ -81,6 +83,62 @@ def test_looks_like_chat_rejects_long_input():
 def test_looks_like_chat_rejects_empty():
     assert not _looks_like_chat("")
     assert not _looks_like_chat("   ")
+
+
+# --- intent routing tests ---
+
+
+def _orch_with_classify_response(text: str) -> MagicMock:
+    """A mock orch whose quick_chat_stream returns the given classifier verdict."""
+    orch = _mock_orch()
+    orch.executor.llm.quick_chat_stream = AsyncMock(return_value=text)
+    return orch
+
+
+@pytest.mark.asyncio
+async def test_route_input_obvious_chat_skips_classifier():
+    orch = _orch_with_classify_response("TASK")  # should NOT be called
+    assert await _route_input(orch, "hi") == "chat"
+    orch.executor.llm.quick_chat_stream.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_route_input_long_input_skips_classifier():
+    orch = _orch_with_classify_response("CHAT")  # should NOT be called
+    long = "add a docstring to every function in src and then run the tests"
+    assert await _route_input(orch, long) == "task"
+    orch.executor.llm.quick_chat_stream.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_route_input_ambiguous_calls_classifier_chat():
+    orch = _orch_with_classify_response("CHAT")
+    assert await _route_input(orch, "how are you") == "chat"
+    orch.executor.llm.quick_chat_stream.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_route_input_ambiguous_calls_classifier_task():
+    orch = _orch_with_classify_response("TASK")
+    assert await _route_input(orch, "explain the orchestrator") == "task"
+    orch.executor.llm.quick_chat_stream.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_route_input_classifier_failure_falls_back_to_task():
+    orch = _mock_orch()
+    orch.executor.llm.quick_chat_stream = AsyncMock(side_effect=RuntimeError("net"))
+    # Ambiguous input. Classifier raises -- safer to treat as task than to
+    # swallow real work into fast-chat.
+    assert await _route_input(orch, "how about a refactor") == "task"
+
+
+@pytest.mark.asyncio
+async def test_llm_classify_intent_parses_case_insensitively():
+    orch = _orch_with_classify_response("chat\n")
+    assert await _llm_classify_intent(orch, "hey") == "chat"
+    orch = _orch_with_classify_response("Task.")
+    assert await _llm_classify_intent(orch, "fix it") == "task"
 
 
 def test_parse_args_interactive():
