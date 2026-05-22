@@ -234,11 +234,11 @@ async def test_shared_client_reused(client):
 async def test_close_client(client):
     mock_client = AsyncMock()
     mock_client.is_closed = False
-    mock_client.close = AsyncMock()
+    mock_client.aclose = AsyncMock()
     client._client = mock_client
 
     await client.close()
-    mock_client.close.assert_called_once()
+    mock_client.aclose.assert_called_once()
 
 
 @pytest.mark.asyncio
