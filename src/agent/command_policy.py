@@ -51,6 +51,7 @@ SAFE_COMMANDS = {
     "cargo",
     "make",
     "git",
+    "ruff",
     "sed",
     "awk",
     "tee",

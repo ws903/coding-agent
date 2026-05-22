@@ -9,6 +9,7 @@ from pathlib import Path
 from agent.command_policy import CommandBlocked
 from agent.db import AgentDB
 from agent.git_ops import GitOps
+from agent.lint_gate import LintGate
 from agent.models import (
     Answer,
     Plan,
@@ -36,6 +37,7 @@ class Orchestrator:
         project_root: Path,
         on_status: callable | None = None,
         git_ops: GitOps | None = None,
+        lint_gate: LintGate | None = None,
         max_steps: int = 20,
     ):
         self.planner = planner
@@ -46,6 +48,7 @@ class Orchestrator:
         self.project_root = project_root
         self.on_status = on_status or (lambda msg: None)
         self.git = git_ops or GitOps(project_root)
+        self.lint = lint_gate or LintGate(project_root)
         self.max_steps = max_steps
         self._aborted = False
         self._current_task: str = ""
@@ -239,26 +242,45 @@ class Orchestrator:
         all_ok = True
         for edit in result.file_edits:
             try:
+                lint_before = self.lint.check_file(edit.path)
+                raw_before = self._read_raw(edit.path)
+
                 if edit.action == "create":
                     before = None
                     self.tools.write_file(edit.path, edit.content)
                 elif edit.action == "rewrite":
-                    try:
-                        before = self.tools.read_file(edit.path)
-                    except FileNotFoundError:
-                        before = None
+                    before = (
+                        self.tools.read_file(edit.path)
+                        if raw_before is not None
+                        else None
+                    )
                     self.tools.write_file(edit.path, edit.content)
                 elif edit.action == "search_replace":
-                    try:
-                        before = self.tools.read_file(edit.path)
-                    except FileNotFoundError:
+                    if raw_before is None:
                         all_ok = False
                         continue
+                    before = self.tools.read_file(edit.path)
                     success = self.tools.edit_file(edit.path, edit.search, edit.replace)
                     if not success:
                         all_ok = False
                         continue
                 else:
+                    continue
+
+                lint_result = self.lint.gate_edit(edit.path, lint_before)
+                if not lint_result.passed:
+                    error_lines = [
+                        f"  {e.code} L{e.row}: {e.message}"
+                        for e in lint_result.new_errors
+                    ]
+                    self.db.add_message(
+                        conv_id,
+                        "lint",
+                        f"Lint errors in {edit.path}:\n" + "\n".join(error_lines),
+                    )
+                    if raw_before is not None:
+                        self.tools.write_file(edit.path, raw_before)
+                    all_ok = False
                     continue
 
                 after = self.tools.read_file(edit.path)
@@ -273,6 +295,15 @@ class Orchestrator:
             except Exception:
                 all_ok = False
         return all_ok
+
+    def _read_raw(self, path: str) -> str | None:
+        try:
+            full_path = self.tools.sandbox.validate_path(path)
+            if full_path.exists():
+                return full_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        return None
 
     def _build_project_context(self) -> str:
         env = self._detect_environment()
