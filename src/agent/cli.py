@@ -201,7 +201,8 @@ _FAST_CHAT_PROMPT = (
 
 
 def _looks_like_chat(text: str) -> bool:
-    """Detect trivial conversational input that doesn't need the full planner."""
+    """Cheap heuristic for obvious conversational input. Only matches single-
+    word greetings; ambiguous short input falls through to the LLM classifier."""
     lower = text.lower().strip().rstrip("?!.,'\"")
     if not lower:
         return False
@@ -209,6 +210,48 @@ def _looks_like_chat(text: str) -> bool:
     if len(words) > 3:
         return False
     return words[0] in _CHAT_TOKENS
+
+
+_CLASSIFIER_PROMPT = (
+    "Classify the user message as either CHAT or TASK.\n\n"
+    "CHAT: small talk, greetings, expressions of feeling, simple questions "
+    "about the agent itself (not the codebase). Examples: 'hi', 'how are "
+    "you', 'thanks', 'what's up', 'are you online', 'you're cool'.\n\n"
+    "TASK: anything about a codebase, file system, or software work -- "
+    "explanations, edits, refactors, debugging, file lookups, exploration. "
+    "Examples: 'add a docstring', 'what does this codebase do', 'list the "
+    "files in src/', 'fix the bug in auth', 'explain the orchestrator'.\n\n"
+    "When in doubt, prefer TASK -- the planner can decline or return a "
+    "direct answer if no work is needed.\n\n"
+    "Reply with exactly one word: CHAT or TASK"
+)
+
+
+async def _llm_classify_intent(orch: Orchestrator, user_input: str) -> str:
+    """Returns 'chat' or 'task'. ~0.3s round-trip with think:false."""
+    messages = [
+        {"role": "system", "content": _CLASSIFIER_PROMPT},
+        {"role": "user", "content": user_input},
+    ]
+    try:
+        result = await orch.executor.llm.quick_chat_stream(
+            messages, on_token=None, temperature=0.0
+        )
+    except Exception:
+        # On any failure fall back to the safer TASK path so we never
+        # accidentally route real work to fast-chat.
+        return "task"
+    return "chat" if "CHAT" in result.upper() else "task"
+
+
+async def _route_input(orch: Orchestrator, user_input: str) -> str:
+    """Tier-based routing: heuristic shortcuts first, LLM classifier for
+    ambiguous middle. Long inputs (>10 words) skip the classifier."""
+    if _looks_like_chat(user_input):
+        return "chat"
+    if len(user_input.split()) > 10:
+        return "task"
+    return await _llm_classify_intent(orch, user_input)
 
 
 async def _fast_chat(orch: Orchestrator, user_input: str) -> None:
@@ -293,7 +336,7 @@ async def _interactive_loop(orch: Orchestrator) -> None:
             console.print(f"[red]Unknown command: {user_input}[/red]")
             continue
 
-        if _looks_like_chat(user_input):
+        if await _route_input(orch, user_input) == "chat":
             await _fast_chat(orch, user_input)
             continue
 
