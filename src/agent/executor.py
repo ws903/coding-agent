@@ -5,6 +5,7 @@ from importlib import resources
 from agent.llm_client import LLMClient
 from agent.mcp_manager import MCPManager
 from agent.models import ExecutionResult, Step
+from agent.skills_manager import SkillsManager
 from agent.tool_runner import ToolRunner
 from agent.tool_schemas import TOOLS
 from agent.tools import FileTools
@@ -20,6 +21,16 @@ def _load_prompt() -> str:
     )
 
 
+def _build_system_prompt(skills: SkillsManager | None) -> str:
+    base = _load_prompt()
+    if skills is None:
+        return base
+    section = skills.catalog_section()
+    if not section:
+        return base
+    return f"{base}\n\n{section}"
+
+
 class Executor:
     def __init__(
         self,
@@ -27,15 +38,17 @@ class Executor:
         tools: FileTools,
         on_token: Callable[[str], None] | None = None,
         mcp: MCPManager | None = None,
+        skills: SkillsManager | None = None,
     ):
         self.llm = llm_client
         self.tools = tools
-        self.system_prompt = _load_prompt()
+        self.system_prompt = _build_system_prompt(skills)
         self.on_token = on_token
         self.mcp = mcp
+        self.skills = skills
 
     async def execute(self, step: Step, errors: str | None = None) -> ExecutionResult:
-        runner = ToolRunner(self.tools, mcp=self.mcp)
+        runner = ToolRunner(self.tools, mcp=self.mcp, skills=self.skills)
         user_content = self._build_user_content(step, errors)
         messages = [
             {"role": "system", "content": self.system_prompt},

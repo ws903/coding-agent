@@ -13,6 +13,7 @@ from agent.executor import Executor
 from agent.llm_client import LLMClient
 from agent.mcp_manager import MCPManager, load_mcp_config
 from agent.models import Plan
+from agent.skills_manager import SkillsManager
 from agent.orchestrator import Orchestrator
 from agent.planner import Planner
 from agent.sandbox import Sandbox
@@ -92,7 +93,10 @@ def build_orchestrator(
             console.print(chunk, end="", soft_wrap=True)
 
     mcp = MCPManager(load_mcp_config(project_root))
-    executor = Executor(executor_client, tools, on_token=on_token, mcp=mcp)
+    skills = SkillsManager(project_root)
+    executor = Executor(
+        executor_client, tools, on_token=on_token, mcp=mcp, skills=skills
+    )
 
     commands = verify_commands or []
     stored_commands = db.get_config("verify_commands")

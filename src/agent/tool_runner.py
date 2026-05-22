@@ -13,6 +13,7 @@ import json
 
 from agent.mcp_manager import MCPManager
 from agent.models import FileEdit
+from agent.skills_manager import SkillsManager
 from agent.tools import FileTools
 
 MAX_OBSERVATION_CHARS = 3000
@@ -27,9 +28,15 @@ def _truncate(text: str, max_chars: int = MAX_OBSERVATION_CHARS) -> str:
 
 
 class ToolRunner:
-    def __init__(self, tools: FileTools, mcp: MCPManager | None = None):
+    def __init__(
+        self,
+        tools: FileTools,
+        mcp: MCPManager | None = None,
+        skills: SkillsManager | None = None,
+    ):
         self.tools = tools
         self.mcp = mcp
+        self.skills = skills
         self.edits: list[FileEdit] = []
         self.commands: list[str] = []
 
@@ -106,6 +113,16 @@ class ToolRunner:
         self.commands.append(cmd)
         return f"Recorded command: {cmd}"
 
+    def _read_skill(self, args: dict) -> str:
+        if self.skills is None:
+            return "Error: no skills configured for this project"
+        name = args["name"]
+        skill = self.skills.get(name)
+        if skill is None:
+            available = ", ".join(s.name for s in self.skills.skills) or "(none)"
+            return f"Error: skill '{name}' not found. Available: {available}"
+        return skill.body or "(skill body is empty)"
+
     _HANDLERS = {
         "read_file": _read_file,
         "list_files": _list_files,
@@ -114,4 +131,5 @@ class ToolRunner:
         "edit_file": _edit_file,
         "replace_file": _replace_file,
         "run_command": _run_command,
+        "read_skill": _read_skill,
     }

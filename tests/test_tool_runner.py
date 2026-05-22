@@ -141,3 +141,33 @@ async def test_mcp_tool_dispatched_to_manager(tmp_path):
 
     assert result == "mcp result text"
     mcp.call.assert_awaited_once_with("mcp__filesystem__read_file", {"path": "/tmp/x"})
+
+
+@pytest.mark.asyncio
+async def test_read_skill_returns_body(tmp_path):
+    from agent.skills_manager import SkillsManager
+
+    skill_dir = tmp_path / ".agent" / "skills"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "review.md").write_text(
+        "---\nname: review\ndescription: x\n---\nBe thorough."
+    )
+    runner = ToolRunner(FileTools(tmp_path), skills=SkillsManager(tmp_path))
+    result = await runner.dispatch(_tc("read_skill", {"name": "review"}))
+    assert "Be thorough." in result
+
+
+@pytest.mark.asyncio
+async def test_read_skill_unknown_returns_error(tmp_path):
+    from agent.skills_manager import SkillsManager
+
+    runner = ToolRunner(FileTools(tmp_path), skills=SkillsManager(tmp_path))
+    result = await runner.dispatch(_tc("read_skill", {"name": "missing"}))
+    assert "not found" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_read_skill_without_manager_errors(tmp_path):
+    runner = ToolRunner(FileTools(tmp_path))
+    result = await runner.dispatch(_tc("read_skill", {"name": "any"}))
+    assert "no skills configured" in result.lower()

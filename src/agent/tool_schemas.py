@@ -167,4 +167,25 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_skill",
+            "description": (
+                "Read the full instructions for a named skill from "
+                ".agent/skills/. Use this only when a skill from the catalog "
+                "applies to the current step. Returns the skill body as text."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Skill name as listed in the 'Available skills' section.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]

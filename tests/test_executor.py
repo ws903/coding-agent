@@ -189,6 +189,24 @@ async def test_execute_uses_streaming_when_on_token_set(mock_client, tools, tmp_
     assert "on_token" in call_kwargs
 
 
+def test_executor_system_prompt_includes_skill_catalog(mock_client, tools, tmp_path):
+    from agent.skills_manager import SkillsManager
+
+    skill_dir = tmp_path / ".agent" / "skills"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "demo.md").write_text(
+        "---\nname: demo-skill\ndescription: A demo skill description\n---\nbody"
+    )
+    executor = Executor(mock_client, tools, skills=SkillsManager(tmp_path))
+    assert "demo-skill" in executor.system_prompt
+    assert "A demo skill description" in executor.system_prompt
+
+
+def test_executor_system_prompt_unchanged_when_no_skills(mock_client, tools):
+    executor = Executor(mock_client, tools)
+    assert "Available skills" not in executor.system_prompt
+
+
 @pytest.mark.asyncio
 async def test_execute_records_commands(executor, mock_client, tmp_path):
     mock_client.chat_with_tools = AsyncMock(
