@@ -41,7 +41,7 @@ class LLMClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434/v1",
-        model: str = "qwen3:14b",
+        model: str = "qwen3.6:35b",
         api_key: str = "local",
         timeout: int = 300,
     ):

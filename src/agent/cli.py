@@ -1,6 +1,7 @@
 # src/agent/cli.py
 import argparse
 import json
+import os
 from pathlib import Path
 
 from rich.console import Console
@@ -16,6 +17,8 @@ from agent.sandbox import Sandbox
 from agent.tools import FileTools
 from agent.verifier import Verifier
 
+DEFAULT_MODEL = "qwen3.6:35b"
+DEFAULT_BASE_URL = "http://localhost:11434/v1"
 
 console = Console()
 
@@ -33,12 +36,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--step", action="store_true", help="Approve each step individually"
     )
-    parser.add_argument("--model", type=str, default="qwen3:14b", help="Model name")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=os.environ.get("AGENT_MODEL", DEFAULT_MODEL),
+        help="Model name (env: AGENT_MODEL)",
+    )
     parser.add_argument(
         "--base-url",
         type=str,
-        default="http://localhost:11434/v1",
-        help="LLM API base URL",
+        default=os.environ.get("AGENT_BASE_URL", DEFAULT_BASE_URL),
+        help="LLM API base URL (env: AGENT_BASE_URL)",
     )
     parser.add_argument(
         "--project", type=str, default=".", help="Project root directory"
@@ -48,8 +56,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def build_orchestrator(
     project_root: Path,
-    base_url: str = "http://localhost:11434/v1",
-    model: str = "qwen3:14b",
+    base_url: str = DEFAULT_BASE_URL,
+    model: str = DEFAULT_MODEL,
     verify_commands: list[str] | None = None,
     max_steps: int = 20,
 ) -> Orchestrator:
