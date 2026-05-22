@@ -48,6 +48,7 @@ class Executor:
         llm_client: LLMClient,
         tools: FileTools,
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         mcp: MCPManager | None = None,
         skills: SkillsManager | None = None,
         agents: AgentsManager | None = None,
@@ -56,6 +57,7 @@ class Executor:
         self.tools = tools
         self.system_prompt = _build_system_prompt(skills, agents)
         self.on_token = on_token
+        self.on_reasoning = on_reasoning
         self.mcp = mcp
         self.skills = skills
         self.agents = agents
@@ -88,7 +90,11 @@ class Executor:
         for _ in range(MAX_TOOL_ITERATIONS):
             if self.on_token is not None:
                 msg = await self.llm.chat_with_tools_stream(
-                    messages, tools, on_token=self.on_token, temperature=0.2
+                    messages,
+                    tools,
+                    on_token=self.on_token,
+                    on_reasoning=self.on_reasoning,
+                    temperature=0.2,
                 )
             else:
                 msg = await self.llm.chat_with_tools(messages, tools, temperature=0.2)
