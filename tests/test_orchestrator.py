@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from agent.lint_gate import LintError, LintResult
 from agent.orchestrator import Orchestrator
 from agent.models import (
     Answer,
@@ -79,6 +80,10 @@ def orchestrator(tmp_path):
     mock_git.rollback = MagicMock(return_value=True)
     mock_git.is_repo = MagicMock(return_value=True)
 
+    mock_lint = MagicMock()
+    mock_lint.check_file = MagicMock(return_value=[])
+    mock_lint.gate_edit = MagicMock(return_value=LintResult(passed=True))
+
     orch = Orchestrator(
         planner=mock_planner,
         executor=mock_executor,
@@ -87,6 +92,7 @@ def orchestrator(tmp_path):
         db=mock_db,
         project_root=tmp_path,
         git_ops=mock_git,
+        lint_gate=mock_lint,
     )
     return orch
 
@@ -558,3 +564,40 @@ def test_token_usage_returns_dict(orchestrator):
     assert usage["planner"]["total_tokens"] == 150
     assert usage["executor"]["total_tokens"] == 300
     assert usage["planner"]["calls"] == 2
+
+
+@pytest.mark.asyncio
+async def test_lint_gate_rollback_on_new_errors(orchestrator, tmp_path):
+    src = tmp_path / "buggy.py"
+    src.write_text("x = 1\n")
+
+    lint_err = LintError(
+        file="buggy.py", row=2, col=1, code="F821", message="Undefined name `y`"
+    )
+    orchestrator.lint.gate_edit = MagicMock(
+        return_value=LintResult(passed=False, new_errors=[lint_err])
+    )
+
+    create_result = ExecutionResult(
+        file_edits=[FileEdit(path="buggy.py", action="create", content="y\n")],
+        commands=[],
+        explanation="created",
+    )
+    orchestrator.executor.execute = AsyncMock(return_value=create_result)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+
+    lint_calls = [
+        c
+        for c in orchestrator.db.add_message.call_args_list
+        if len(c[0]) >= 3 and c[0][1] == "lint"
+    ]
+    assert len(lint_calls) >= 1
+    assert "F821" in lint_calls[0][0][2]
+
+
+@pytest.mark.asyncio
+async def test_lint_gate_passes_does_not_rollback(orchestrator):
+    orchestrator.lint.gate_edit = MagicMock(return_value=LintResult(passed=True))
+    result = await orchestrator.run("Fix the bug", mode="autonomous")
+    assert result["status"] == "completed"
+    orchestrator.db.save_edit.assert_called()
