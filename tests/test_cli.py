@@ -10,6 +10,7 @@ from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
     _find_project_root,
+    _looks_like_chat,
     _show_config,
     _show_history,
     build_orchestrator,
@@ -46,6 +47,40 @@ def test_find_project_root_returns_input_when_no_git(tmp_path):
 def test_find_project_root_uses_dir_itself_when_repo_root(tmp_path):
     (tmp_path / ".git").mkdir()
     assert _find_project_root(tmp_path) == tmp_path.resolve()
+
+
+def test_looks_like_chat_greetings():
+    for text in ["hi", "hello", "hey", "yo", "thanks", "thank you", "bye"]:
+        assert _looks_like_chat(text), text
+
+
+def test_looks_like_chat_punctuation_tolerated():
+    assert _looks_like_chat("hi!")
+    assert _looks_like_chat("Hey.")
+    assert _looks_like_chat("thanks?")
+
+
+def test_looks_like_chat_rejects_tasks():
+    """Anything that smells like real work falls through to the planner."""
+    for text in [
+        "add a docstring to foo.py",
+        "fix the bug in auth",
+        "refactor the orchestrator",
+        "what does the lint gate do?",
+        "explain the architecture",
+        "create a new test file",
+    ]:
+        assert not _looks_like_chat(text), text
+
+
+def test_looks_like_chat_rejects_long_input():
+    """Even if it starts with 'hi', long input is probably a real task."""
+    assert not _looks_like_chat("hi can you add tests for foo")
+
+
+def test_looks_like_chat_rejects_empty():
+    assert not _looks_like_chat("")
+    assert not _looks_like_chat("   ")
 
 
 def test_parse_args_interactive():

@@ -160,6 +160,55 @@ SLASH_COMMANDS = {
     "/quit": "Exit the agent",
 }
 
+# Short conversational inputs that should bypass the planner entirely.
+# Conservative -- we only fast-path obvious greetings; anything ambiguous
+# falls through to the planner so we don't skip real work.
+_CHAT_TOKENS = {
+    "hi",
+    "hello",
+    "hey",
+    "yo",
+    "sup",
+    "thanks",
+    "thank",
+    "ok",
+    "okay",
+    "cool",
+    "great",
+    "nice",
+    "bye",
+    "goodbye",
+    "morning",
+}
+
+_FAST_CHAT_PROMPT = (
+    "You are a friendly assistant embedded in a coding agent CLI. "
+    "Reply briefly (1-2 sentences). The user is making conversation, "
+    "not asking for code work."
+)
+
+
+def _looks_like_chat(text: str) -> bool:
+    """Detect trivial conversational input that doesn't need the full planner."""
+    lower = text.lower().strip().rstrip("?!.,'\"")
+    if not lower:
+        return False
+    words = lower.split()
+    if len(words) > 3:
+        return False
+    return words[0] in _CHAT_TOKENS
+
+
+async def _fast_chat(orch: Orchestrator, user_input: str) -> None:
+    """Bypass planner+executor. Streams a short reply directly from the LLM."""
+    messages = [
+        {"role": "system", "content": _FAST_CHAT_PROMPT},
+        {"role": "user", "content": user_input},
+    ]
+    async for chunk in orch.executor.llm.chat_stream(messages, temperature=0.7):
+        console.print(chunk, end="", soft_wrap=True)
+    console.print()
+
 
 async def run_interactive(args: argparse.Namespace) -> None:
     project_root = _find_project_root(Path(args.project))
@@ -220,6 +269,10 @@ async def _interactive_loop(orch: Orchestrator) -> None:
             continue
         elif user_input.startswith("/"):
             console.print(f"[red]Unknown command: {user_input}[/red]")
+            continue
+
+        if _looks_like_chat(user_input):
+            await _fast_chat(orch, user_input)
             continue
 
         result = await orch.run(
