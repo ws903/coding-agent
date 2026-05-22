@@ -33,7 +33,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 # 2. Install Ollama and pull the default model
 #    Download from https://ollama.com/download, then:
-ollama pull qwen3:14b
+ollama pull qwen3.6:35b
 
 # 3. Clone and install
 git clone https://github.com/ws903/coding-agent.git
@@ -48,7 +48,7 @@ uv run agent --project C:\path\to\your\project
 
 - **[uv](https://docs.astral.sh/uv/)** -- Installs and manages Python automatically
 - **[Ollama](https://ollama.com)** (or any OpenAI-compatible API server)
-- **GPU** -- Recommended: NVIDIA GPU with 10GB+ VRAM. The default model (`qwen3:14b` at Q4) needs ~9GB
+- **GPU** -- Recommended: NVIDIA GPU with 16GB+ VRAM. The default model (`qwen3.6:35b`, MoE 35B/3B-active) needs ~16GB at Q3 or ~22GB at Q4 with RAM offload. 32GB+ system RAM recommended for offload. For lower VRAM, see [Recommended Models](#recommended-models) -- `qwen3:14b` (~9GB) is the small-VRAM fallback
 
 ## Installation
 
@@ -93,7 +93,7 @@ uv run agent --project /path/to/your/project
 The agent starts a REPL. Type a task in natural language:
 
 ```
-Agent v0.1.0 | Model: qwen3:14b | Project: C:\Users\dave\myproject
+Agent v0.1.0 | Model: qwen3.6:35b | Project: C:\Users\dave\myproject
 Type a task or /help for commands.
 
 > Add input validation to the user registration endpoint
@@ -132,14 +132,26 @@ uv run agent --task "refactor the database module to use connection pooling" --a
 | `--project`  | `.`                              | Project root directory               |
 | `--auto`     | off                              | Run in autonomous mode               |
 | `--task`     | --                               | Task description (required w/ `--auto`) |
-| `--model`    | `qwen3:14b`               | Model name                           |
-| `--base-url` | `http://localhost:11434/v1`       | LLM API base URL                     |
+| `--model`    | `qwen3.6:35b` (env: `AGENT_MODEL`)   | Model name                           |
+| `--base-url` | `http://localhost:11434/v1` (env: `AGENT_BASE_URL`) | LLM API base URL                     |
 | `--max-steps`| `20`                             | Maximum execution steps              |
 | `--step`     | off                              | Approve each step individually       |
 
 ## Configuration
 
-Settings are stored per-project in SQLite at `{project}/.agent/agent.db`. Set them via `/config` in interactive mode.
+Three layers, in precedence order: **CLI flag → env var → `.env` file → built-in default**.
+
+For things that vary per-project (e.g. `verify_commands`), use SQLite via `/config` in interactive mode (stored at `{project}/.agent/agent.db`).
+
+For things that should follow you across all projects (e.g. pointing at a remote Ollama backend), drop a gitignored `.env` in the coding-agent repo root:
+
+```
+# coding-agent/.env  (already in .gitignore)
+AGENT_BASE_URL=http://192.168.1.42:11434/v1
+AGENT_MODEL=qwen3.6:35b
+```
+
+The agent loads this on every invocation, so `uv run agent` from any project picks up your config.
 
 ### Verification Commands
 
@@ -156,8 +168,8 @@ If no verification commands are configured, the verifier is a no-op.
 Use a reasoning-focused model for planning and a code-optimized model for execution:
 
 ```
-/config planner_model qwen3:14b
-/config executor_model qwen3:14b
+/config planner_model qwen3.6:35b
+/config executor_model qwen3.6:35b
 ```
 
 Both point at the same backend by default. You can also split backends:
@@ -186,20 +198,23 @@ uv run agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
 
 ## Recommended Models
 
-Models sized for 16GB VRAM (e.g. NVIDIA RTX 5070 Ti, RTX 4080).
+For 16GB VRAM with 32GB+ system RAM (e.g. NVIDIA RTX 5070 Ti, RTX 4080):
+
+| Model | VRAM | SWE-bench Verified | Best For |
+|-------|------|-------|----------|
+| **Qwen3.6-35B-A3B** | ~16 GB (Q3) or ~22 GB (Q4, RAM offload) | **73.4** | **Default.** MoE 35B/3B-active. Unified planner+executor, thinking mode built-in, 262K context, multimodal |
+| Qwen3-14B (dense) | ~9 GB | ~45 | **Small-VRAM fallback.** No offload, predictable. Use if 35B's offload doesn't suit your CPU/RAM |
+| Phi-4-Reasoning-Plus 14B | ~9 GB | -- | Planner-only specialist if you split planner/executor |
+| Devstral Small 2 (24B) | ~14 GB | ~46 | Executor-only specialist if you split |
+
+The default (`qwen3.6:35b`) handles both planner and executor roles in a single model -- the MoE router internally specializes per token, so a manual split into separate planner/executor models gives little benefit and adds model-swap latency.
+
+For 24GB+ VRAM (RTX 4090, RTX 5080+):
 
 | Model | VRAM (Q4) | Best For |
 |-------|-----------|----------|
-| **Qwen3-14B** | ~9 GB | **Default.** All-rounder with `/think` toggle for reasoning vs speed |
-| Phi-4-Reasoning-Plus 14B | ~9 GB | Planning -- strongest reasoning at 14B |
-| Devstral Small 2 (24B) | ~14 GB | High SWE-bench score, tight fit on 16GB |
-
-For 24GB+ VRAM (RTX 4090, RTX 5080):
-
-| Model | VRAM (Q4) | Best For |
-|-------|-----------|----------|
-| Qwen3-Coder-30B-A3B (MoE) | ~19 GB | Best local coding model. 30B total, 3B active per token |
-| Qwen3.5-35B-A3B (MoE) | ~22 GB | Strongest agentic performance |
+| Qwen3.6-27B (dense) | ~17 GB | Dense alternative to 35B MoE, no offload, multimodal |
+| Qwen3-Coder-30B-A3B (MoE) | ~19 GB | Code-specialized MoE if you don't need vision |
 
 ## Architecture
 
