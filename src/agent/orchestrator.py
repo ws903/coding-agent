@@ -155,10 +155,11 @@ class Orchestrator:
             self.on_status(f"Executing step {step.id}: {step.action}")
 
             snapshot_sha = self._snapshot(f"agent: before step {step.id}")
-            success = await self._execute_step(conv_id, step)
+            success = await self._execute_step(conv_id, step, completed_steps)
             self._steps_executed += 1
 
             if success:
+                self._snapshot(f"agent: step {step.id} - {step.action[:60]}")
                 completed_steps.append({"step_id": step.id, "action": step.action})
                 step_index += 1
                 continue
@@ -197,14 +198,21 @@ class Orchestrator:
         self.on_status("All steps completed successfully.")
         return {"status": "completed", "conv_id": conv_id}
 
-    async def _execute_step(self, conv_id: str, step: Step) -> bool:
+    async def _execute_step(
+        self,
+        conv_id: str,
+        step: Step,
+        completed_steps: list[dict] | None = None,
+    ) -> bool:
         for attempt in range(MAX_EXECUTOR_RETRIES):
             errors = None
             if attempt > 0:
                 errors = self._get_last_error(conv_id)
                 self.on_status(f"  Retry {attempt}/{MAX_EXECUTOR_RETRIES - 1}...")
 
-            result = await self.executor.execute(step, errors=errors)
+            result = await self.executor.execute(
+                step, errors=errors, completed_steps=completed_steps
+            )
             self.db.add_message(conv_id, "executor", result.explanation)
 
             apply_ok = self._apply_edits(conv_id, step.id, result)

@@ -475,9 +475,42 @@ async def test_get_last_error_returns_unknown_when_no_failures(orchestrator):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_called_before_each_step(orchestrator):
+async def test_snapshot_called_before_and_after_each_step(orchestrator):
+    """Pre-step snapshot + post-step commit per successful step (2 per step)."""
     await orchestrator.run("Fix the bug", mode="autonomous")
-    assert orchestrator.git.snapshot.call_count == 2
+    # Default plan has 2 steps -> 2 pre + 2 post = 4 snapshot calls
+    assert orchestrator.git.snapshot.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_post_step_commit_message_includes_step_action(orchestrator):
+    """Post-step commit should reference the step action so the git log is readable."""
+    await orchestrator.run("Fix the bug", mode="autonomous")
+    messages = [c.args[0] for c in orchestrator.git.snapshot.call_args_list]
+    # At least one snapshot call should be the post-step commit referencing a step action.
+    assert any(m.startswith("agent: step ") for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_executor_receives_completed_steps_after_first(orchestrator):
+    """The second step's executor.execute should be passed the first step's record."""
+    seen_completed = []
+
+    original_execute = orchestrator.executor.execute
+
+    async def capture(step, errors=None, completed_steps=None):
+        seen_completed.append(list(completed_steps or []))
+        return await original_execute(
+            step, errors=errors, completed_steps=completed_steps
+        )
+
+    orchestrator.executor.execute = AsyncMock(side_effect=capture)
+    await orchestrator.run("Fix the bug", mode="autonomous")
+
+    # Step 1 sees no completed steps; step 2 sees step 1.
+    assert seen_completed[0] == []
+    assert len(seen_completed[1]) == 1
+    assert seen_completed[1][0]["step_id"] == 1
 
 
 @pytest.mark.asyncio
@@ -524,9 +557,11 @@ async def test_abort_stops_execution(orchestrator):
 
     original_execute = orchestrator.executor.execute
 
-    async def abort_on_first_step(step, errors=None):
+    async def abort_on_first_step(step, errors=None, completed_steps=None):
         orchestrator.abort()
-        return await original_execute(step, errors=errors)
+        return await original_execute(
+            step, errors=errors, completed_steps=completed_steps
+        )
 
     orchestrator.executor.execute = AsyncMock(side_effect=abort_on_first_step)
     result = await orchestrator.run("Fix the bug", mode="autonomous")

@@ -63,7 +63,12 @@ class Executor:
             SubagentRunner(llm_client, tools) if agents is not None else None
         )
 
-    async def execute(self, step: Step, errors: str | None = None) -> ExecutionResult:
+    async def execute(
+        self,
+        step: Step,
+        errors: str | None = None,
+        completed_steps: list[dict] | None = None,
+    ) -> ExecutionResult:
         runner = ToolRunner(
             self.tools,
             mcp=self.mcp,
@@ -71,7 +76,7 @@ class Executor:
             agents=self.agents,
             subagent_runner=self.subagent_runner,
         )
-        user_content = self._build_user_content(step, errors)
+        user_content = self._build_user_content(step, errors, completed_steps)
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_content},
@@ -111,8 +116,18 @@ class Executor:
             explanation=last_content,
         )
 
-    def _build_user_content(self, step: Step, errors: str | None) -> str:
+    def _build_user_content(
+        self,
+        step: Step,
+        errors: str | None,
+        completed_steps: list[dict] | None = None,
+    ) -> str:
         parts = [f"## Step\n{step.action}"]
+        if completed_steps:
+            done = "\n".join(
+                f"- Step {s['step_id']}: {s['action']}" for s in completed_steps
+            )
+            parts.append(f"\n## Already completed in this task\n{done}")
         if step.files_needed:
             parts.append(
                 "\n## Files likely relevant\n"
