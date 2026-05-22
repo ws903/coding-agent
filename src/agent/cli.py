@@ -164,8 +164,13 @@ SLASH_COMMANDS = {
     "/config": "Show/edit project configuration",
     "/history": "Show conversation history",
     "/abort": "Abort current execution",
-    "/quit": "Exit the agent",
+    "/quit": "Exit the agent (alias: /exit, or type 'exit'/'quit')",
 }
+
+# Bare-word exits. Only exact matches -- "exit the loop in main.py" still
+# goes to the planner, because it's a real task description. The slash
+# variants (/quit, /exit) work too.
+_EXIT_INPUTS = {"exit", "quit", "q", ":q"}
 
 # Short conversational inputs that should bypass the planner entirely.
 # Conservative -- we only fast-path obvious greetings; anything ambiguous
@@ -265,7 +270,7 @@ async def _interactive_loop(orch: Orchestrator) -> None:
         if not user_input:
             continue
 
-        if user_input == "/quit":
+        if user_input.lower() in _EXIT_INPUTS or user_input in {"/quit", "/exit"}:
             break
         elif user_input == "/help":
             for cmd, desc in SLASH_COMMANDS.items():
