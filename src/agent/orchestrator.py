@@ -13,10 +13,13 @@ from agent.db import AgentDB
 from agent.git_ops import GitOps
 from agent.lint_gate import LintGate
 from agent.models import (
+    AgentStatus,
+    AgentTokenUsage,
     Answer,
+    ExecutionResult,
+    ModelUsage,
     Plan,
     Step,
-    ExecutionResult,
 )
 from agent.planner import Planner
 from agent.executor import Executor
@@ -61,32 +64,32 @@ class Orchestrator:
     def abort(self) -> None:
         self._aborted = True
 
-    def status(self) -> dict:
-        return {
-            "task": self._current_task,
-            "current_step": self._current_step,
-            "steps_executed": self._steps_executed,
-            "total_steps": self._total_steps,
-            "aborted": self._aborted,
-        }
+    def status(self) -> AgentStatus:
+        return AgentStatus(
+            task=self._current_task,
+            current_step=self._current_step,
+            steps_executed=self._steps_executed,
+            total_steps=self._total_steps,
+            aborted=self._aborted,
+        )
 
-    def token_usage(self) -> dict:
+    def token_usage(self) -> AgentTokenUsage:
         planner_usage = self.planner.llm.total_usage
         executor_usage = self.executor.llm.total_usage
-        return {
-            "planner": {
-                "prompt_tokens": planner_usage.prompt_tokens,
-                "completion_tokens": planner_usage.completion_tokens,
-                "total_tokens": planner_usage.total_tokens,
-                "calls": self.planner.llm.call_count,
-            },
-            "executor": {
-                "prompt_tokens": executor_usage.prompt_tokens,
-                "completion_tokens": executor_usage.completion_tokens,
-                "total_tokens": executor_usage.total_tokens,
-                "calls": self.executor.llm.call_count,
-            },
-        }
+        return AgentTokenUsage(
+            planner=ModelUsage(
+                prompt_tokens=planner_usage.prompt_tokens,
+                completion_tokens=planner_usage.completion_tokens,
+                total_tokens=planner_usage.total_tokens,
+                calls=self.planner.llm.call_count,
+            ),
+            executor=ModelUsage(
+                prompt_tokens=executor_usage.prompt_tokens,
+                completion_tokens=executor_usage.completion_tokens,
+                total_tokens=executor_usage.total_tokens,
+                calls=self.executor.llm.call_count,
+            ),
+        )
 
     async def run(
         self,

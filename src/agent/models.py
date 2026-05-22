@@ -1,5 +1,8 @@
 # src/agent/models.py
 from dataclasses import dataclass, field
+from typing import Literal, TypedDict
+
+EditAction = Literal["create", "rewrite", "search_replace"]
 
 
 @dataclass
@@ -24,10 +27,43 @@ class Answer:
 @dataclass
 class FileEdit:
     path: str
-    action: str  # "create", "rewrite", "search_replace"
+    action: EditAction
     content: str | None = None  # for create/rewrite
     search: str | None = None  # for search_replace
     replace: str | None = None  # for search_replace
+
+
+class CompletedStep(TypedDict):
+    """Record of a successfully completed step. Used in cross-step context."""
+
+    step_id: int
+    action: str
+
+
+class ModelUsage(TypedDict):
+    """Per-model token usage stats."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    calls: int
+
+
+class AgentTokenUsage(TypedDict):
+    """The combined planner+executor usage shape returned by orchestrator."""
+
+    planner: ModelUsage
+    executor: ModelUsage
+
+
+class AgentStatus(TypedDict):
+    """Live orchestrator status snapshot."""
+
+    task: str
+    current_step: str
+    steps_executed: int
+    total_steps: int
+    aborted: bool
 
 
 @dataclass
