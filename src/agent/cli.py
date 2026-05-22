@@ -11,6 +11,7 @@ from rich.prompt import Prompt
 from agent.db import AgentDB
 from agent.executor import Executor
 from agent.llm_client import LLMClient
+from agent.agents_manager import AgentsManager
 from agent.mcp_manager import MCPManager, load_mcp_config
 from agent.models import Plan
 from agent.skills_manager import SkillsManager
@@ -94,8 +95,14 @@ def build_orchestrator(
 
     mcp = MCPManager(load_mcp_config(project_root))
     skills = SkillsManager(project_root)
+    agents = AgentsManager(project_root)
     executor = Executor(
-        executor_client, tools, on_token=on_token, mcp=mcp, skills=skills
+        executor_client,
+        tools,
+        on_token=on_token,
+        mcp=mcp,
+        skills=skills,
+        agents=agents,
     )
 
     commands = verify_commands or []

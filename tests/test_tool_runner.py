@@ -171,3 +171,51 @@ async def test_read_skill_without_manager_errors(tmp_path):
     runner = ToolRunner(FileTools(tmp_path))
     result = await runner.dispatch(_tc("read_skill", {"name": "any"}))
     assert "no skills configured" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_dispatches_to_runner(tmp_path):
+    from unittest.mock import AsyncMock
+
+    from agent.agents_manager import AgentsManager
+
+    agents_dir = tmp_path / ".agent" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "reviewer.md").write_text(
+        "---\nname: reviewer\ndescription: x\n---\nBe critical."
+    )
+    agents = AgentsManager(tmp_path)
+    fake_subrunner = AsyncMock()
+    fake_subrunner.run = AsyncMock(return_value="LGTM with nits.")
+
+    runner = ToolRunner(
+        FileTools(tmp_path), agents=agents, subagent_runner=fake_subrunner
+    )
+    result = await runner.dispatch(
+        _tc("spawn_agent", {"role": "reviewer", "task": "Review main.py"})
+    )
+
+    assert result == "LGTM with nits."
+    fake_subrunner.run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_unknown_role_errors(tmp_path):
+    from unittest.mock import AsyncMock
+
+    from agent.agents_manager import AgentsManager
+
+    runner = ToolRunner(
+        FileTools(tmp_path),
+        agents=AgentsManager(tmp_path),
+        subagent_runner=AsyncMock(),
+    )
+    result = await runner.dispatch(_tc("spawn_agent", {"role": "missing", "task": "x"}))
+    assert "not found" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_spawn_agent_without_manager_errors(tmp_path):
+    runner = ToolRunner(FileTools(tmp_path))
+    result = await runner.dispatch(_tc("spawn_agent", {"role": "x", "task": "y"}))
+    assert "no subagent roles" in result.lower()
