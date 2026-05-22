@@ -10,6 +10,7 @@ run_command queues into `commands` for the orchestrator's sandbox.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 from agent.agents_manager import AgentsManager
 from agent.mcp_manager import MCPManager
@@ -37,12 +38,14 @@ class ToolRunner:
         skills: SkillsManager | None = None,
         agents: AgentsManager | None = None,
         subagent_runner: SubagentRunner | None = None,
+        on_tool_call: Callable[[str, dict], None] | None = None,
     ):
         self.tools = tools
         self.mcp = mcp
         self.skills = skills
         self.agents = agents
         self.subagent_runner = subagent_runner
+        self.on_tool_call = on_tool_call
         self.edits: list[FileEdit] = []
         self.commands: list[str] = []
 
@@ -54,6 +57,12 @@ class ToolRunner:
             args = json.loads(fn.get("arguments") or "{}")
         except json.JSONDecodeError as exc:
             return f"Error: could not parse arguments: {exc}"
+
+        if self.on_tool_call is not None:
+            try:
+                self.on_tool_call(name, args)
+            except Exception:  # noqa: BLE001 -- display callback must never break dispatch
+                pass
 
         if self.mcp is not None and self.mcp.owns(name):
             return _truncate(await self.mcp.call(name, args))
