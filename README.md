@@ -20,6 +20,9 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 - **Adaptive Edit Format** -- Whole-file rewrites for small files (<300 lines), search/replace blocks for large files. Whitespace-normalized matching with relative indent preservation
 - **Sandboxed Execution** -- All file operations scoped to project root. Command allowlist blocks destructive operations (`rm -rf`, `sudo`, force-push, etc.)
 - **Token Tracking** -- Displays prompt/completion tokens and LLM call counts after each task
+- **Native Tool Calling** -- Executor uses structured OpenAI-format `tool_calls` (not regex-parsed text). Self-describing schemas, no parse-retry loop
+- **Streaming Output** -- Tokens stream into the REPL in real-time as the executor reasons
+- **MCP Support** -- Extend the executor with [Model Context Protocol](https://modelcontextprotocol.io/) servers (GitHub, filesystem, Postgres, etc.) via a `.mcp.json` config
 - **Two Modes** -- Interactive REPL with plan approval, or autonomous fire-and-forget
 - **Pluggable Models** -- Swap models by changing a URL and model name. No code changes
 - **Pluggable Backends** -- Ollama, TabbyAPI/ExLlamaV3, LM Studio, vLLM, or any OpenAI-compatible server
@@ -162,6 +165,28 @@ Configure which commands run after every step:
 ```
 
 If no verification commands are configured, the verifier is a no-op.
+
+### MCP Servers
+
+The agent supports the [Model Context Protocol](https://modelcontextprotocol.io/) for extending the executor's tool set with external servers (GitHub, filesystem, Postgres, Docker, etc.). Drop a `.mcp.json` at the project root using the standard format:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."}
+    }
+  }
+}
+```
+
+On agent start, each server is spawned over stdio and its tools are merged into the executor's tool list under prefixed names (`mcp__<server>__<tool>`). If `.mcp.json` is missing or invalid, the agent runs as if no servers were configured.
 
 ### Dual-Model Setup
 
@@ -337,16 +362,17 @@ uvx ruff format src/ tests/          # Format
 
 ## Roadmap
 
-- [ ] **Native tool calling** -- Ollama and TabbyAPI now support OpenAI-compatible function calling. Migrate from text-parsed edits to structured tool use for higher reliability
-- [ ] **Structured output** -- Use grammar-constrained generation (GBNF/JSON schema) to guarantee valid edit blocks instead of regex parsing
-- [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 supports prefix caching. Reuse KV cache across executor calls on the same file to cut time-to-first-token
-- [ ] **Streaming output** -- Stream executor responses to show progress in real-time
+- [x] **Native tool calling** -- Executor uses structured OpenAI-format `tool_calls` (PR #21)
+- [x] **Streaming output** -- Tokens stream live in the REPL (PR #22)
+- [x] **MCP integration** -- External tools via Model Context Protocol servers (this PR)
+- [ ] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (filesystem-discovered)
+- [ ] **Subagent dispatch** -- Spawn focused sub-LLMs for code-review, devil's-advocate, debug
+- [ ] **Codebase indexing** -- Tree-sitter map (lazy) so the planner sees structure not just files
+- [ ] **Structured output** -- Grammar-constrained generation (GBNF/JSON schema) for edits
+- [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 prefix caching across executor calls
 - [ ] **Step-level auto-commits** -- Git commit after each successful step with descriptive message
 - [ ] **Cross-step context** -- Feed executor a summary of prior steps to reduce redundant reads
-- [ ] **Codebase indexing** -- Embed files with a local model for retrieval. Give the planner semantic search over the project instead of just a file tree
 - [ ] **Parallel step execution** -- When planner identifies independent steps, execute them concurrently
-- [ ] **MCP integration** -- Connect external tools via Model Context Protocol servers
-- [ ] **Web UI** -- Browser-based chat interface accessible from phone/laptop, sharing the same inference backend
 
 ## Remote Access
 

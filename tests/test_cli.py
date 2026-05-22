@@ -19,6 +19,15 @@ from agent.cli import (
 from agent.models import Plan, Step
 
 
+def _mock_orch() -> MagicMock:
+    """MagicMock orchestrator with awaitable mcp lifecycle methods."""
+    m = MagicMock()
+    m.executor.mcp.connect = AsyncMock()
+    m.executor.mcp.close = AsyncMock()
+    m.executor.mcp.connected_servers = []
+    return m
+
+
 def test_parse_args_interactive():
     args = parse_args([])
     assert args.auto is False
@@ -141,7 +150,7 @@ def test_approve_plan_step_without_files(mock_console, mock_prompt):
 def test_show_config(mock_console):
     mock_db = MagicMock()
     mock_db.get_config.return_value = "(not set)"
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.db = mock_db
     _show_config(mock_orch)
     assert mock_console.print.call_count == 6  # 1 header + 5 config keys
@@ -162,7 +171,7 @@ def test_show_config_with_values(mock_console):
         "executor_model": "qwen3:14b",
         "verify_commands": '["pytest"]',
     }.get(key, default)
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.db = mock_db
     _show_config(mock_orch)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
@@ -178,7 +187,7 @@ def test_show_history_empty(mock_console):
     mock_cursor.fetchall.return_value = []
     mock_db = MagicMock()
     mock_db.execute.return_value = mock_cursor
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.db = mock_db
     _show_history(mock_orch)
     mock_console.print.assert_called_once_with("No conversation history.")
@@ -206,7 +215,7 @@ def test_show_history_with_rows(mock_console):
     mock_cursor.fetchall.return_value = rows
     mock_db = MagicMock()
     mock_db.execute.return_value = mock_cursor
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.db = mock_db
     _show_history(mock_orch)
     assert mock_console.print.call_count == 2
@@ -232,7 +241,7 @@ async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     mock_build.assert_called_once()
 
@@ -249,7 +258,7 @@ async def test_run_interactive_help(mock_console, mock_prompt, mock_build):
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
     # All slash commands should be printed
@@ -272,7 +281,7 @@ async def test_run_interactive_config(
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_build.return_value = mock_orch
     await run_interactive(args)
     mock_show_config.assert_called_once_with(mock_orch)
@@ -293,7 +302,7 @@ async def test_run_interactive_history(
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_build.return_value = mock_orch
     await run_interactive(args)
     mock_show_history.assert_called_once_with(mock_orch)
@@ -311,7 +320,7 @@ async def test_run_interactive_unknown_command(mock_console, mock_prompt, mock_b
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
     assert any("Unknown command" in c and "/foobar" in c for c in print_calls)
@@ -329,7 +338,7 @@ async def test_run_interactive_empty_input(mock_console, mock_prompt, mock_build
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     # Should not crash and should reach /quit
 
@@ -343,7 +352,7 @@ async def test_run_interactive_task_completed(
     mock_console, mock_prompt, mock_build, mock_approve
 ):
     mock_prompt.ask.side_effect = ["Fix the bug", "/quit"]
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "completed"})
     mock_build.return_value = mock_orch
     args = Namespace(
@@ -369,7 +378,7 @@ async def test_run_interactive_task_failed(
     mock_console, mock_prompt, mock_build, mock_approve
 ):
     mock_prompt.ask.side_effect = ["Do something", "/quit"]
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(
         return_value={"status": "failed", "reason": "syntax error"}
     )
@@ -394,7 +403,7 @@ async def test_run_interactive_task_aborted(
     mock_console, mock_prompt, mock_build, mock_approve
 ):
     mock_prompt.ask.side_effect = ["Do something", "/quit"]
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "aborted"})
     mock_build.return_value = mock_orch
     args = Namespace(
@@ -420,7 +429,7 @@ async def test_run_interactive_eof(mock_console, mock_prompt, mock_build):
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
     assert any("Goodbye" in c for c in print_calls)
@@ -440,7 +449,7 @@ async def test_run_interactive_keyboard_interrupt(
         model="qwen3:14b",
         max_steps=20,
     )
-    mock_build.return_value = MagicMock()
+    mock_build.return_value = _mock_orch()
     await run_interactive(args)
     print_calls = [str(c) for c in mock_console.print.call_args_list]
     assert any("Goodbye" in c for c in print_calls)
@@ -471,7 +480,7 @@ async def test_run_autonomous_no_task(mock_console, mock_build):
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli.console")
 async def test_run_autonomous_completed(mock_console, mock_build):
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "completed"})
     mock_build.return_value = mock_orch
     args = Namespace(
@@ -492,7 +501,7 @@ async def test_run_autonomous_completed(mock_console, mock_build):
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli.console")
 async def test_run_autonomous_failed(mock_console, mock_build):
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "failed", "reason": "timeout"})
     mock_build.return_value = mock_orch
     args = Namespace(
@@ -512,7 +521,7 @@ async def test_run_autonomous_failed(mock_console, mock_build):
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli.console")
 async def test_run_autonomous_failed_no_reason(mock_console, mock_build):
-    mock_orch = MagicMock()
+    mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "failed"})
     mock_build.return_value = mock_orch
     args = Namespace(

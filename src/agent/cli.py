@@ -11,6 +11,7 @@ from rich.prompt import Prompt
 from agent.db import AgentDB
 from agent.executor import Executor
 from agent.llm_client import LLMClient
+from agent.mcp_manager import MCPManager, load_mcp_config
 from agent.models import Plan
 from agent.orchestrator import Orchestrator
 from agent.planner import Planner
@@ -90,7 +91,8 @@ def build_orchestrator(
         def on_token(chunk: str) -> None:
             console.print(chunk, end="", soft_wrap=True)
 
-    executor = Executor(executor_client, tools, on_token=on_token)
+    mcp = MCPManager(load_mcp_config(project_root))
+    executor = Executor(executor_client, tools, on_token=on_token, mcp=mcp)
 
     commands = verify_commands or []
     stored_commands = db.get_config("verify_commands")
@@ -142,12 +144,24 @@ async def run_interactive(args: argparse.Namespace) -> None:
         max_steps=args.max_steps,
         stream=True,
     )
+    await orch.executor.mcp.connect()
+    if orch.executor.mcp.connected_servers:
+        console.print(
+            f"[dim]MCP servers: {', '.join(orch.executor.mcp.connected_servers)}[/dim]"
+        )
 
     console.print(
         f"[bold]Agent v0.1.0[/bold] | Model: {args.model} | Project: {project_root}"
     )
     console.print("Type a task or /help for commands.\n")
 
+    try:
+        await _interactive_loop(orch)
+    finally:
+        await orch.executor.mcp.close()
+
+
+async def _interactive_loop(orch: Orchestrator) -> None:
     while True:
         try:
             user_input = Prompt.ask("[bold cyan]>[/bold cyan]")
@@ -209,7 +223,16 @@ async def run_autonomous(args: argparse.Namespace) -> int:
     )
 
     console.print(f"[bold]Autonomous mode[/bold] | Task: {args.task}")
-    result = await orch.run(args.task, mode="autonomous")
+    await orch.executor.mcp.connect()
+    if orch.executor.mcp.connected_servers:
+        console.print(
+            f"[dim]MCP servers: {', '.join(orch.executor.mcp.connected_servers)}[/dim]"
+        )
+
+    try:
+        result = await orch.run(args.task, mode="autonomous")
+    finally:
+        await orch.executor.mcp.close()
 
     if result["status"] == "answered":
         console.print(result["answer"])
