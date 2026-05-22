@@ -268,6 +268,68 @@ async def test_chat_records_token_usage(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_with_tools_returns_message_dict(client):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path": "foo.py"}',
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 30, "completion_tokens": 10},
+    }
+    resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    tools = [{"type": "function", "function": {"name": "read_file"}}]
+    msg = await client.chat_with_tools(
+        [{"role": "user", "content": "Read foo.py"}], tools=tools
+    )
+
+    assert msg["role"] == "assistant"
+    assert msg["tool_calls"][0]["function"]["name"] == "read_file"
+    # tools should have been included in the request body.
+    call_args = mock_client.post.call_args
+    sent_payload = call_args.kwargs["json"]
+    assert sent_payload["tools"] == tools
+
+
+@pytest.mark.asyncio
+async def test_chat_without_tools_omits_tools_field(client):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"choices": [{"message": {"content": "hi"}}]}
+    resp.raise_for_status = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    await client.chat([{"role": "user", "content": "test"}])
+
+    sent_payload = mock_client.post.call_args.kwargs["json"]
+    assert "tools" not in sent_payload
+
+
+@pytest.mark.asyncio
 async def test_chat_records_usage_without_usage_field(client):
     resp = MagicMock()
     resp.status_code = 200

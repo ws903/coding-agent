@@ -1,4 +1,5 @@
 # tests/test_integration.py
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -20,13 +21,26 @@ PLAN_RESPONSE = """## Plan: Create hello script
 - Verify: python3 hello.py
 """
 
-EXECUTOR_RESPONSE = """I'll create the hello script.
 
-CREATE hello.py
-```
-print("hello world")
-```
-"""
+def _create_file_msg(path: str, content: str) -> dict:
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "arguments": json.dumps({"path": path, "content": content}),
+                },
+            }
+        ],
+    }
+
+
+def _final_msg(content: str) -> dict:
+    return {"role": "assistant", "content": content, "tool_calls": []}
 
 
 @pytest.mark.asyncio
@@ -34,7 +48,13 @@ async def test_full_autonomous_run(tmp_path):
     db = AgentDB(tmp_path / ".agent" / "agent.db")
 
     mock_llm = AsyncMock(spec=LLMClient)
-    mock_llm.chat = AsyncMock(side_effect=[PLAN_RESPONSE, EXECUTOR_RESPONSE])
+    mock_llm.chat = AsyncMock(return_value=PLAN_RESPONSE)
+    mock_llm.chat_with_tools = AsyncMock(
+        side_effect=[
+            _create_file_msg("hello.py", 'print("hello world")\n'),
+            _final_msg("Created hello.py."),
+        ]
+    )
 
     sandbox = Sandbox(tmp_path)
     tools = FileTools(tmp_path)
@@ -80,15 +100,14 @@ async def test_full_run_with_verification(tmp_path):
 - Verify: python3 greet.py
 """
 
-    executor_response = """
-CREATE greet.py
-```
-print("greetings")
-```
-"""
-
     mock_llm = AsyncMock(spec=LLMClient)
-    mock_llm.chat = AsyncMock(side_effect=[plan_response, executor_response])
+    mock_llm.chat = AsyncMock(return_value=plan_response)
+    mock_llm.chat_with_tools = AsyncMock(
+        side_effect=[
+            _create_file_msg("greet.py", 'print("greetings")\n'),
+            _final_msg("Created greet.py."),
+        ]
+    )
 
     sandbox = Sandbox(tmp_path)
     tools = FileTools(tmp_path)
