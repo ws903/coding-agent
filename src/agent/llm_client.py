@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import random
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 
 import httpx
 
@@ -152,7 +152,7 @@ class LLMClient:
         self,
         messages: list[dict],
         tools: list[dict],
-        on_token: callable | None = None,
+        on_token: Callable[[str], None] | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
     ) -> dict:

@@ -1,4 +1,5 @@
 # src/agent/executor.py
+from collections.abc import Callable
 from importlib import resources
 
 from agent.llm_client import LLMClient
@@ -23,7 +24,7 @@ class Executor:
         self,
         llm_client: LLMClient,
         tools: FileTools,
-        on_token: callable | None = None,
+        on_token: Callable[[str], None] | None = None,
     ):
         self.llm = llm_client
         self.tools = tools
