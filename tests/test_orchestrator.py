@@ -456,8 +456,9 @@ def test_build_project_context_includes_env(orchestrator):
 
 
 def test_detect_environment_cached(orchestrator):
-    env1 = orchestrator._detect_environment()
-    env2 = orchestrator._detect_environment()
+    """EnvironmentDetector caches the env summary across calls."""
+    env1 = orchestrator.env.detect()
+    env2 = orchestrator.env.detect()
     assert env1 is env2
 
 

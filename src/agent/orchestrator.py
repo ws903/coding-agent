@@ -1,15 +1,16 @@
 # src/agent/orchestrator.py
 from __future__ import annotations
 
-import platform
-import shutil
-import subprocess
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
 from agent.codebase_index import CodebaseIndex
 from agent.command_policy import CommandBlocked
 from agent.db import AgentDB
+from agent.edit_applier import EditApplier
+from agent.env import EnvironmentDetector
+from agent.executor import Executor
 from agent.git_ops import GitOps
 from agent.lint_gate import LintGate
 from agent.models import (
@@ -22,10 +23,10 @@ from agent.models import (
     Step,
 )
 from agent.planner import Planner
-from agent.executor import Executor
-from agent.verifier import Verifier
 from agent.tools import FileTools
+from agent.verifier import Verifier
 
+logger = logging.getLogger(__name__)
 
 MAX_EXECUTOR_RETRIES = 2
 MAX_REPLANS = 3
@@ -55,6 +56,8 @@ class Orchestrator:
         self.git = git_ops or GitOps(project_root)
         self.lint = lint_gate or LintGate(project_root)
         self.max_steps = max_steps
+        self.env = EnvironmentDetector(project_root)
+        self.edit_applier = EditApplier(tools, self.lint, db)
         self._aborted = False
         self._current_task: str = ""
         self._current_step: str = ""
@@ -252,74 +255,10 @@ class Orchestrator:
         return False
 
     def _apply_edits(self, conv_id: str, step_id: int, result: ExecutionResult) -> bool:
-        all_ok = True
-        for edit in result.file_edits:
-            try:
-                lint_before = self.lint.check_file(edit.path)
-                raw_before = self._read_raw(edit.path)
-
-                if edit.action == "create":
-                    before = None
-                    self.tools.write_file(edit.path, edit.content)
-                elif edit.action == "rewrite":
-                    before = (
-                        self.tools.read_file(edit.path)
-                        if raw_before is not None
-                        else None
-                    )
-                    self.tools.write_file(edit.path, edit.content)
-                elif edit.action == "search_replace":
-                    if raw_before is None:
-                        all_ok = False
-                        continue
-                    before = self.tools.read_file(edit.path)
-                    success = self.tools.edit_file(edit.path, edit.search, edit.replace)
-                    if not success:
-                        all_ok = False
-                        continue
-                else:
-                    continue
-
-                lint_result = self.lint.gate_edit(edit.path, lint_before)
-                if not lint_result.passed:
-                    error_lines = [
-                        f"  {e.code} L{e.row}: {e.message}"
-                        for e in lint_result.new_errors
-                    ]
-                    self.db.add_message(
-                        conv_id,
-                        "lint",
-                        f"Lint errors in {edit.path}:\n" + "\n".join(error_lines),
-                    )
-                    if raw_before is not None:
-                        self.tools.write_file(edit.path, raw_before)
-                    all_ok = False
-                    continue
-
-                after = self.tools.read_file(edit.path)
-                self.db.save_edit(
-                    conv_id,
-                    step_id,
-                    edit.path,
-                    edit.action,
-                    before=before,
-                    after=after,
-                )
-            except Exception:
-                all_ok = False
-        return all_ok
-
-    def _read_raw(self, path: str) -> str | None:
-        try:
-            full_path = self.tools.sandbox.validate_path(path)
-            if full_path.exists():
-                return full_path.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
-        return None
+        return self.edit_applier.apply(conv_id, step_id, result)
 
     def _build_project_context(self) -> str:
-        env = self._detect_environment()
+        env = self.env.detect()
         files = self.tools.list_files(".")
         tree = "\n".join(f"  {f}" for f in files[:100])
         index = CodebaseIndex(self.project_root).summary()
@@ -327,92 +266,6 @@ class Orchestrator:
         if index:
             sections.append(index)
         return "\n".join(sections) + "\n"
-
-    def _detect_environment(self) -> str:
-        if hasattr(self, "_env_cache"):
-            return self._env_cache
-
-        os_name = platform.system()
-        arch = platform.machine()
-
-        shell = "unknown"
-        shell_path = shutil.which("bash") or shutil.which("zsh") or shutil.which("sh")
-        if shell_path:
-            shell = Path(shell_path).name
-
-        tools = []
-        for cmd in [
-            "git",
-            "python3",
-            "python",
-            "node",
-            "npm",
-            "pip",
-            "pip3",
-            "cargo",
-            "make",
-            "docker",
-            "rg",
-        ]:
-            path = shutil.which(cmd)
-            if path:
-                ver = self._tool_version(cmd)
-                tools.append(f"{cmd} {ver}" if ver else cmd)
-
-        git_info = self._detect_git()
-
-        lines = [
-            "<env>",
-            f"os: {os_name} {arch}",
-            f"shell: {shell}",
-            f"cwd: {self.project_root}",
-        ]
-        if git_info:
-            lines.append(f"git: {git_info}")
-        if tools:
-            lines.append(f"tools: {', '.join(tools)}")
-        lines.append("</env>")
-
-        self._env_cache = "\n".join(lines)
-        return self._env_cache
-
-    def _tool_version(self, cmd: str) -> str:
-        try:
-            result = subprocess.run(
-                [cmd, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            first_line = result.stdout.strip().split("\n")[0]
-            for part in first_line.split():
-                if part[0].isdigit():
-                    return part.rstrip(",")
-        except Exception:
-            pass
-        return ""
-
-    def _detect_git(self) -> str:
-        try:
-            branch = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=str(self.project_root),
-            ).stdout.strip()
-            if not branch:
-                return ""
-            diff_stat = subprocess.run(
-                ["git", "diff", "--stat", "--quiet"],
-                capture_output=True,
-                timeout=5,
-                cwd=str(self.project_root),
-            )
-            status = "clean" if diff_stat.returncode == 0 else "dirty"
-            return f"{branch} ({status})"
-        except Exception:
-            return ""
 
     def _plan_to_text(self, plan: Plan) -> str:
         lines = [f"## Plan: {plan.goal}\n"]
@@ -428,7 +281,11 @@ class Orchestrator:
     def _snapshot(self, message: str) -> str | None:
         try:
             return self.git.snapshot(message)
-        except Exception:
+        except Exception as exc:
+            # Snapshot is best-effort -- if git is unreachable or in a bad
+            # state we want to keep going and skip rollback rather than crash
+            # the whole run. Log so failures are visible.
+            logger.warning("git snapshot %r failed: %s", message, exc)
             return None
 
     def _get_last_error(self, conv_id: str) -> str:
