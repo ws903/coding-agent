@@ -66,6 +66,7 @@ def build_orchestrator(
     model: str = DEFAULT_MODEL,
     verify_commands: list[str] | None = None,
     max_steps: int = 20,
+    stream: bool = False,
 ) -> Orchestrator:
     project_root = project_root.resolve()
     db = AgentDB(project_root / ".agent" / "agent.db")
@@ -82,7 +83,14 @@ def build_orchestrator(
     sandbox = Sandbox(project_root)
     tools = FileTools(project_root)
     planner = Planner(planner_client)
-    executor = Executor(executor_client, tools)
+
+    on_token = None
+    if stream:
+
+        def on_token(chunk: str) -> None:
+            console.print(chunk, end="", soft_wrap=True)
+
+    executor = Executor(executor_client, tools, on_token=on_token)
 
     commands = verify_commands or []
     stored_commands = db.get_config("verify_commands")
@@ -128,7 +136,11 @@ SLASH_COMMANDS = {
 async def run_interactive(args: argparse.Namespace) -> None:
     project_root = Path(args.project).resolve()
     orch = build_orchestrator(
-        project_root, args.base_url, args.model, max_steps=args.max_steps
+        project_root,
+        args.base_url,
+        args.model,
+        max_steps=args.max_steps,
+        stream=True,
     )
 
     console.print(

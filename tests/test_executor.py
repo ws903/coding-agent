@@ -171,6 +171,25 @@ async def test_execute_tool_loop_returns_tool_results(executor, mock_client, tmp
 
 
 @pytest.mark.asyncio
+async def test_execute_uses_streaming_when_on_token_set(mock_client, tools, tmp_path):
+    chunks_seen = []
+    executor = Executor(mock_client, tools, on_token=chunks_seen.append)
+
+    mock_client.chat_with_tools_stream = AsyncMock(return_value=_msg(content="Done."))
+
+    step = Step(id=1, action="Nothing", files_needed=[])
+    result = await executor.execute(step)
+
+    # Streaming variant should have been called, non-streaming should not.
+    mock_client.chat_with_tools_stream.assert_called_once()
+    assert "Done." in result.explanation
+    # The on_token callback was passed through (even though our mock didn't
+    # invoke it -- we only assert wiring here).
+    call_kwargs = mock_client.chat_with_tools_stream.call_args.kwargs
+    assert "on_token" in call_kwargs
+
+
+@pytest.mark.asyncio
 async def test_execute_records_commands(executor, mock_client, tmp_path):
     mock_client.chat_with_tools = AsyncMock(
         side_effect=[

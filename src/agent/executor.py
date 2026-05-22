@@ -19,10 +19,16 @@ def _load_prompt() -> str:
 
 
 class Executor:
-    def __init__(self, llm_client: LLMClient, tools: FileTools):
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        tools: FileTools,
+        on_token: callable | None = None,
+    ):
         self.llm = llm_client
         self.tools = tools
         self.system_prompt = _load_prompt()
+        self.on_token = on_token
 
     async def execute(self, step: Step, errors: str | None = None) -> ExecutionResult:
         runner = ToolRunner(self.tools)
@@ -34,7 +40,12 @@ class Executor:
 
         last_content = ""
         for _ in range(MAX_TOOL_ITERATIONS):
-            msg = await self.llm.chat_with_tools(messages, TOOLS, temperature=0.2)
+            if self.on_token is not None:
+                msg = await self.llm.chat_with_tools_stream(
+                    messages, TOOLS, on_token=self.on_token, temperature=0.2
+                )
+            else:
+                msg = await self.llm.chat_with_tools(messages, TOOLS, temperature=0.2)
             last_content = msg.get("content") or ""
             tool_calls = msg.get("tool_calls") or []
 

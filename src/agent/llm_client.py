@@ -148,6 +148,72 @@ class LLMClient:
         data = await self._post_chat(messages, temperature, max_tokens, tools=tools)
         return data["choices"][0]["message"]
 
+    async def chat_with_tools_stream(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        on_token: callable | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+    ) -> dict:
+        """Stream content chunks via on_token; return the assembled assistant message."""
+        context_limit = await self.get_context_limit()
+        max_tokens = self._dynamic_max_tokens(messages, context_limit)
+        payload = self._build_payload(messages, temperature, max_tokens, stream=True)
+        payload["tools"] = tools
+        url = f"{self.base_url}/chat/completions"
+        client = await self._get_client()
+
+        content_parts: list[str] = []
+        tool_calls: list[dict] = []
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data_str)
+                choice = chunk["choices"][0]
+                delta = choice.get("delta", {})
+
+                content = delta.get("content")
+                if content:
+                    content_parts.append(content)
+                    if on_token is not None:
+                        on_token(content)
+
+                if delta.get("tool_calls"):
+                    tool_calls.extend(delta["tool_calls"])
+
+                usage = chunk.get("usage")
+                if usage:
+                    prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                    completion_tokens = usage.get(
+                        "completion_tokens", completion_tokens
+                    )
+
+        if prompt_tokens or completion_tokens:
+            self._record_usage(
+                {
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                    }
+                }
+            )
+        else:
+            self.call_count += 1
+
+        msg: dict = {"role": "assistant", "content": "".join(content_parts)}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        return msg
+
     async def _post_chat(
         self,
         messages: list[dict],

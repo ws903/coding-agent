@@ -330,6 +330,73 @@ async def test_chat_without_tools_omits_tools_field(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_with_tools_stream_yields_content_and_assembles_message(client):
+    async def mock_aiter_lines():
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+            'data: {"choices":[{"delta":{"content":" world"}}]}',
+            'data: {"choices":[{"delta":{}}]}',
+            "data: [DONE]",
+        ]
+        for line in lines:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_lines = mock_aiter_lines
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    chunks = []
+    msg = await client.chat_with_tools_stream(
+        [{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "x"}}],
+        on_token=chunks.append,
+    )
+
+    assert chunks == ["Hello", " world"]
+    assert msg["content"] == "Hello world"
+    assert "tool_calls" not in msg
+
+
+@pytest.mark.asyncio
+async def test_chat_with_tools_stream_captures_tool_calls(client):
+    tc_chunk = (
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"c1","type":"function",'
+        '"function":{"name":"read_file","arguments":"{\\"path\\":\\"foo.py\\"}"}}]}}]}'
+    )
+
+    async def mock_aiter_lines():
+        for line in [tc_chunk, "data: [DONE]"]:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_lines = mock_aiter_lines
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    msg = await client.chat_with_tools_stream(
+        [{"role": "user", "content": "read foo.py"}],
+        tools=[{"type": "function", "function": {"name": "read_file"}}],
+    )
+
+    assert msg["content"] == ""
+    assert len(msg["tool_calls"]) == 1
+    assert msg["tool_calls"][0]["function"]["name"] == "read_file"
+
+
+@pytest.mark.asyncio
 async def test_chat_records_usage_without_usage_field(client):
     resp = MagicMock()
     resp.status_code = 200
