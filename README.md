@@ -292,12 +292,23 @@ For 16GB VRAM with 32GB+ system RAM (e.g. NVIDIA RTX 5070 Ti, RTX 4080):
 
 | Model | VRAM | SWE-bench Verified | Best For |
 |-------|------|-------|----------|
-| **Qwen3.6-35B-A3B** | ~16 GB (Q3) or ~22 GB (Q4, RAM offload) | **73.4** | **Default.** MoE 35B/3B-active. Unified planner+executor, thinking mode built-in, 262K context, multimodal |
-| Qwen3-14B (dense) | ~9 GB | ~45 | **Small-VRAM fallback.** No offload, predictable. Use if 35B's offload doesn't suit your CPU/RAM |
-| Phi-4-Reasoning-Plus 14B | ~9 GB | -- | Planner-only specialist if you split planner/executor |
-| Devstral Small 2 (24B) | ~14 GB | ~46 | Executor-only specialist if you split |
+| **Qwen3.6-35B-A3B** | ~16 GB (Q3) or ~22 GB (Q4, RAM offload) | **73.4** | **Default.** MoE 35B/3B-active. Unified planner+executor. Planner runs `think:false` by default for speed (see ADR 0007), opt back in with `AGENT_PLANNER_THINK=true`. 262K context, multimodal |
+| Qwen3-14B (dense) | ~9 GB | ~45 | **Small-VRAM fallback.** Fits entirely in VRAM, no offload, predictable latency. Use if 35B's RAM offload feels too slow on your CPU/RAM |
+| Devstral Small 2 (24B) | ~14 GB | ~46 | Executor-only specialist if you split planner/executor |
 
-The default (`qwen3.6:35b`) handles both planner and executor roles in a single model -- the MoE router internally specializes per token, so a manual split into separate planner/executor models gives little benefit and adds model-swap latency.
+### Why we don't split planner from executor (on 16GB VRAM)
+
+The default uses one model for both roles. This is intentional and evidence-backed:
+
+- **Model-swap dominates wall-clock time.** Ollama can only keep one model hot in VRAM at a time on a 16GB card -- qwen3.6:35b's offload already uses all VRAM + ~6GB of RAM. Switching to a separate planner model means ~5-15s of model load on every planner↔executor transition. With the planner already running `think:false` (~17s), the swap cost equals or exceeds the planner-call savings.
+- **Weak planners disproportionately hurt quality.** The [PEAR benchmark (2026)](https://arxiv.org/abs/2510.07505) found a weak planner drops total agent utility to ~30%, while a weak executor only drops it to ~72%. So if you split, the planner is the *worst* role to weaken -- but a smaller dense model in the planner slot would do exactly that.
+- **Real-world A/B tests show splits often lose quality.** The [AkitaOnRails 2026 mixed-model benchmark](https://akitaonrails.com/en/2026/04/25/llm-benchmarks-vale-a-pena-misturar-2-modelos/) tested 7+ planner/executor variants against a single-model baseline on real coding tasks. Solo Opus scored 97/100 in 18 min; most splits lost 2-7 quality points and added 7-35 minutes. Conclusion: *"multi-agent on continuous coding agent work is premature optimization in disguise."*
+- **MoE router specializes per token internally.** Qwen3.6-35B-A3B activates different experts for "plan a refactor" vs "write this function" within one forward pass. Internal routing replaces external model routing.
+- **The case for splitting is cost arbitrage** (expensive frontier planner + cheap helper executor). That argument disappears for local inference where marginal call cost is zero.
+
+The only scenario where a split clearly helps on 16GB hardware is **if you upgrade to 24GB+ VRAM** -- both models can stay hot, swap cost vanishes, and PEAR-style "strong planner + cheaper executor" becomes free.
+
+Reasoning-specialist models (Phi-4-Reasoning-Plus, DeepSeek-R1) are not recommended for the planner role here: with the planner running `think:false` for latency, a reasoning specialist provides no advantage over the default.
 
 For 24GB+ VRAM (RTX 4090, RTX 5080+):
 
