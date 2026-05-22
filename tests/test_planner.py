@@ -2,38 +2,54 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.planner import Planner
 from agent.llm_client import LLMClient
-from agent.models import Answer, Plan
+from agent.models import Answer, Plan, Step
+from agent.planner import Planner
 
 
-MOCK_PLAN_RESPONSE = """## Plan: Add health check
+PLAN_RESPONSE = {
+    "kind": "plan",
+    "goal": "Add health check",
+    "steps": [
+        {
+            "id": 1,
+            "action": "Create health endpoint",
+            "files_needed": ["src/app.py"],
+            "verify_command": "pytest tests/test_health.py",
+        },
+        {
+            "id": 2,
+            "action": "Add health test",
+            "files_needed": ["tests/test_health.py"],
+            "verify_command": "pytest tests/test_health.py",
+        },
+    ],
+}
 
-### Step 1: Create health endpoint
-- Files needed: src/app.py
-- Verify: pytest tests/test_health.py
-
-### Step 2: Add health test
-- Files needed: tests/test_health.py
-- Verify: pytest tests/test_health.py
-"""
-
-MOCK_REPLAN_RESPONSE = """## Plan: Add health check (revised)
-
-### Step 1: Fix import error in app.py
-- Files needed: src/app.py
-- Verify: python -c "import src.app"
-
-### Step 2: Create health endpoint
-- Files needed: src/app.py
-- Verify: pytest tests/test_health.py
-"""
+REPLAN_RESPONSE = {
+    "kind": "plan",
+    "goal": "Add health check (revised)",
+    "steps": [
+        {
+            "id": 1,
+            "action": "Fix import error in app.py",
+            "files_needed": ["src/app.py"],
+            "verify_command": None,
+        },
+        {
+            "id": 2,
+            "action": "Create health endpoint",
+            "files_needed": ["src/app.py"],
+            "verify_command": "pytest tests/test_health.py",
+        },
+    ],
+}
 
 
 @pytest.fixture
 def mock_client():
     client = AsyncMock(spec=LLMClient)
-    client.chat = AsyncMock(return_value=MOCK_PLAN_RESPONSE)
+    client.chat_json = AsyncMock(return_value=PLAN_RESPONSE)
     return client
 
 
@@ -48,14 +64,13 @@ async def test_generate_plan(planner, mock_client):
     assert plan.goal == "Add health check"
     assert len(plan.steps) == 2
     assert plan.steps[0].action == "Create health endpoint"
-    mock_client.chat.assert_called_once()
+    mock_client.chat_json.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_generate_plan_sends_system_prompt(planner, mock_client):
     await planner.generate_plan("task", "context")
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    messages = mock_client.chat_json.call_args.args[0]
     assert messages[0]["role"] == "system"
     assert "planning agent" in messages[0]["content"].lower()
 
@@ -63,8 +78,7 @@ async def test_generate_plan_sends_system_prompt(planner, mock_client):
 @pytest.mark.asyncio
 async def test_generate_plan_includes_context(planner, mock_client):
     await planner.generate_plan("Add feature", "src/app.py\nsrc/models.py")
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    messages = mock_client.chat_json.call_args.args[0]
     user_msg = messages[-1]["content"]
     assert "Add feature" in user_msg
     assert "src/app.py" in user_msg
@@ -72,13 +86,12 @@ async def test_generate_plan_includes_context(planner, mock_client):
 
 @pytest.mark.asyncio
 async def test_replan(planner, mock_client):
-    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
-    original_plan = Plan(goal="Add health check", steps=[])
+    mock_client.chat_json = AsyncMock(return_value=REPLAN_RESPONSE)
     plan = await planner.replan(
         task="Add health check",
-        current_plan=original_plan,
+        current_plan=Plan(goal="Add health check", steps=[]),
         failed_step_id=1,
-        error="ImportError: no module named flask",
+        error="ImportError",
     )
     assert len(plan.steps) == 2
     assert "Fix import" in plan.steps[0].action
@@ -86,19 +99,16 @@ async def test_replan(planner, mock_client):
 
 @pytest.mark.asyncio
 async def test_replan_includes_error(planner, mock_client):
-    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
-    original_plan = Plan(goal="goal", steps=[])
-    await planner.replan("task", original_plan, 1, "some error")
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[-1]["content"]
-    assert "some error" in user_msg
+    mock_client.chat_json = AsyncMock(return_value=REPLAN_RESPONSE)
+    await planner.replan("task", Plan(goal="g", steps=[]), 1, "some error")
+    messages = mock_client.chat_json.call_args.args[0]
+    assert "some error" in messages[-1]["content"]
 
 
 @pytest.mark.asyncio
 async def test_generate_plan_returns_answer_for_question(planner, mock_client):
-    mock_client.chat = AsyncMock(
-        return_value="## Answer\n\nThis app is a local coding agent.\n"
+    mock_client.chat_json = AsyncMock(
+        return_value={"kind": "answer", "answer": "This app is a local coding agent."}
     )
     result = await planner.generate_plan("what is this app?", "file tree")
     assert isinstance(result, Answer)
@@ -107,10 +117,7 @@ async def test_generate_plan_returns_answer_for_question(planner, mock_client):
 
 @pytest.mark.asyncio
 async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
-    """replan with a plan that has steps includes step summaries in the message."""
-    from agent.models import Step
-
-    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
+    mock_client.chat_json = AsyncMock(return_value=REPLAN_RESPONSE)
     original_plan = Plan(
         goal="Add health check",
         steps=[
@@ -124,8 +131,7 @@ async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
         failed_step_id=1,
         error="ImportError",
     )
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    messages = mock_client.chat_json.call_args.args[0]
     user_msg = messages[-1]["content"]
     assert "Step 1: Create endpoint" in user_msg
     assert "Step 2: Write tests" in user_msg
@@ -133,49 +139,60 @@ async def test_replan_with_steps_includes_plan_summary(planner, mock_client):
 
 
 @pytest.mark.asyncio
-async def test_generate_plan_retries_on_empty_parse(planner, mock_client):
-    """When the first response has ## Plan: but no steps, planner retries."""
-    bad_response = "## Plan: do something\n\nno steps here\n"
-    mock_client.chat = AsyncMock(side_effect=[bad_response, MOCK_PLAN_RESPONSE])
+async def test_generate_plan_retries_on_invalid_shape(planner, mock_client):
+    bad = {"kind": "plan", "goal": "do something"}  # missing steps
+    mock_client.chat_json = AsyncMock(side_effect=[bad, PLAN_RESPONSE])
     result = await planner.generate_plan("Add feature", "file tree")
     assert isinstance(result, Plan)
     assert len(result.steps) == 2
-    assert mock_client.chat.call_count == 2
+    assert mock_client.chat_json.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_generate_plan_returns_best_effort_after_max_retries(
     planner, mock_client
 ):
-    """After MAX_PARSE_RETRIES, returns whatever was last parsed."""
-    bad_response = "## Plan: do something\n\nno steps\n"
-    mock_client.chat = AsyncMock(return_value=bad_response)
+    bad = {"kind": "plan", "goal": "x"}
+    mock_client.chat_json = AsyncMock(return_value=bad)
     result = await planner.generate_plan("Add feature", "file tree")
+    # 1 initial + 2 retries
+    assert mock_client.chat_json.call_count == 3
     assert isinstance(result, Plan)
-    assert mock_client.chat.call_count == 3  # 1 initial + 2 retries
+    assert result.steps == []
 
 
 @pytest.mark.asyncio
-async def test_replan_retries_on_empty_parse(planner, mock_client):
-    bad_response = "## Plan: revised\n\nnothing\n"
-    mock_client.chat = AsyncMock(side_effect=[bad_response, MOCK_REPLAN_RESPONSE])
-    original_plan = Plan(goal="goal", steps=[])
-    result = await planner.replan("task", original_plan, 1, "error")
+async def test_generate_plan_retries_on_json_decode_error(planner, mock_client):
+    import json
+
+    mock_client.chat_json = AsyncMock(
+        side_effect=[json.JSONDecodeError("bad", "doc", 0), PLAN_RESPONSE]
+    )
+    result = await planner.generate_plan("Add feature", "file tree")
+    assert isinstance(result, Plan)
+    assert mock_client.chat_json.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_replan_retries_on_invalid_shape(planner, mock_client):
+    bad = {"kind": "plan", "goal": "revised"}
+    mock_client.chat_json = AsyncMock(side_effect=[bad, REPLAN_RESPONSE])
+    result = await planner.replan("task", Plan(goal="g", steps=[]), 1, "err")
     assert len(result.steps) == 2
-    assert mock_client.chat.call_count == 2
+    assert mock_client.chat_json.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_replan_includes_completed_steps(planner, mock_client):
-    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
-    original_plan = Plan(goal="goal", steps=[])
+    mock_client.chat_json = AsyncMock(return_value=REPLAN_RESPONSE)
     completed = [
         {"step_id": 1, "action": "Create endpoint"},
         {"step_id": 2, "action": "Write tests"},
     ]
-    await planner.replan("task", original_plan, 3, "error", completed_steps=completed)
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
+    await planner.replan(
+        "task", Plan(goal="g", steps=[]), 3, "err", completed_steps=completed
+    )
+    messages = mock_client.chat_json.call_args.args[0]
     user_msg = messages[-1]["content"]
     assert "Completed Steps" in user_msg
     assert "Create endpoint" in user_msg
@@ -185,10 +202,18 @@ async def test_replan_includes_completed_steps(planner, mock_client):
 
 @pytest.mark.asyncio
 async def test_replan_without_completed_steps(planner, mock_client):
-    mock_client.chat = AsyncMock(return_value=MOCK_REPLAN_RESPONSE)
-    original_plan = Plan(goal="goal", steps=[])
-    await planner.replan("task", original_plan, 1, "error")
-    call_args = mock_client.chat.call_args
-    messages = call_args[0][0] if call_args[0] else call_args[1]["messages"]
-    user_msg = messages[-1]["content"]
-    assert "Completed Steps" not in user_msg
+    mock_client.chat_json = AsyncMock(return_value=REPLAN_RESPONSE)
+    await planner.replan("task", Plan(goal="g", steps=[]), 1, "err")
+    messages = mock_client.chat_json.call_args.args[0]
+    assert "Completed Steps" not in messages[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_replan_coerces_answer_to_empty_plan(planner, mock_client):
+    """An 'answer' response during replan is nonsensical -- return empty plan."""
+    mock_client.chat_json = AsyncMock(
+        return_value={"kind": "answer", "answer": "not a plan"}
+    )
+    result = await planner.replan("task", Plan(goal="g", steps=[]), 1, "err")
+    assert isinstance(result, Plan)
+    assert result.steps == []
