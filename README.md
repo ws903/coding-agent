@@ -25,6 +25,7 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 - **MCP Support** -- Extend the executor with [Model Context Protocol](https://modelcontextprotocol.io/) servers (GitHub, filesystem, Postgres, etc.) via a `.mcp.json` config
 - **Skills** -- User-extensible markdown skills in `.agent/skills/`. Progressive disclosure: only descriptions in context until the model calls `read_skill(name=...)`
 - **Subagents** -- User-defined roles in `.agent/agents/`. Executor can `spawn_agent(role, task)` for code review, devil's-advocate, debugging -- fresh context, read-only tools
+- **Codebase Symbol Map** -- Planner sees top-level functions, classes, and imports per file (via Python `ast`). No vector embeddings, just structural awareness
 - **Two Modes** -- Interactive REPL with plan approval, or autonomous fire-and-forget
 - **Pluggable Models** -- Swap models by changing a URL and model name. No code changes
 - **Pluggable Backends** -- Ollama, TabbyAPI/ExLlamaV3, LM Studio, vLLM, or any OpenAI-compatible server
@@ -427,7 +428,7 @@ uvx ruff format src/ tests/          # Format
 - [x] **MCP integration** -- External tools via Model Context Protocol servers (PR #23)
 - [x] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (PR #24)
 - [x] **Subagent dispatch** -- User-defined roles in `.agent/agents/`, spawned via `spawn_agent` tool (this PR)
-- [ ] **Codebase indexing** -- Tree-sitter map (lazy) so the planner sees structure not just files
+- [x] **Codebase indexing** -- Python `ast` symbol map for the planner (Python-only for now; tree-sitter multi-language follow-up later) (this PR)
 - [ ] **Structured output** -- Grammar-constrained generation (GBNF/JSON schema) for edits
 - [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 prefix caching across executor calls
 - [ ] **Step-level auto-commits** -- Git commit after each successful step with descriptive message

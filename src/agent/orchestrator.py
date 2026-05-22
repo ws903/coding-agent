@@ -7,6 +7,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+from agent.codebase_index import CodebaseIndex
 from agent.command_policy import CommandBlocked
 from agent.db import AgentDB
 from agent.git_ops import GitOps
@@ -310,7 +311,11 @@ class Orchestrator:
         env = self._detect_environment()
         files = self.tools.list_files(".")
         tree = "\n".join(f"  {f}" for f in files[:100])
-        return f"{env}\n## File Tree\n{tree}\n"
+        index = CodebaseIndex(self.project_root).summary()
+        sections = [env, f"## File Tree\n{tree}"]
+        if index:
+            sections.append(index)
+        return "\n".join(sections) + "\n"
 
     def _detect_environment(self) -> str:
         if hasattr(self, "_env_cache"):
