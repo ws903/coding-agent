@@ -103,10 +103,16 @@ def build_orchestrator(
     planner = Planner(planner_client)
 
     on_token = None
+    on_reasoning = None
     if stream:
 
         def on_token(chunk: str) -> None:
             console.print(chunk, end="", soft_wrap=True)
+
+        def on_reasoning(chunk: str) -> None:
+            # Dim italic so the user sees the model is thinking, but the
+            # reasoning visually separates from the final answer.
+            console.print(chunk, end="", soft_wrap=True, style="dim italic")
 
     mcp = MCPManager(load_mcp_config(project_root))
     skills = SkillsManager(project_root)
@@ -115,6 +121,7 @@ def build_orchestrator(
         executor_client,
         tools,
         on_token=on_token,
+        on_reasoning=on_reasoning,
         mcp=mcp,
         skills=skills,
         agents=agents,
@@ -200,13 +207,23 @@ def _looks_like_chat(text: str) -> bool:
 
 
 async def _fast_chat(orch: Orchestrator, user_input: str) -> None:
-    """Bypass planner+executor. Streams a short reply directly from the LLM."""
+    """Bypass planner+executor AND the model's reasoning phase.
+
+    Uses Ollama's native /api/chat with `think: false`. For thinking models
+    like qwen3.6, this cuts "hi"-style replies from ~14s to ~3s by skipping
+    the silent reasoning pass.
+    """
     messages = [
         {"role": "system", "content": _FAST_CHAT_PROMPT},
         {"role": "user", "content": user_input},
     ]
-    async for chunk in orch.executor.llm.chat_stream(messages, temperature=0.7):
+
+    def on_token(chunk: str) -> None:
         console.print(chunk, end="", soft_wrap=True)
+
+    await orch.executor.llm.quick_chat_stream(
+        messages, on_token=on_token, temperature=0.7
+    )
     console.print()
 
 

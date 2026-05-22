@@ -185,15 +185,64 @@ class LLMClient:
         data = await self._post_chat(messages, temperature, max_tokens, tools=tools)
         return data["choices"][0]["message"]
 
+    async def quick_chat_stream(
+        self,
+        messages: list[dict],
+        on_token: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+    ) -> str:
+        """Native Ollama /api/chat with `think: false` -- skips the model's
+        reasoning phase entirely. ~3-5x faster than chat_stream for thinking
+        models when you just need a quick chat reply.
+
+        Returns the assembled content string. Tokens are streamed via on_token.
+        Note: this bypasses the OpenAI-compat endpoint and the LLM-call retry
+        path; intended for cheap "hi"-style chat where retries don't matter.
+        """
+        ollama_base = self.base_url.replace("/v1", "")
+        url = f"{ollama_base}/api/chat"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "think": False,
+            "options": {"temperature": temperature},
+        }
+        client = await self._get_client()
+        parts: list[str] = []
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                msg = chunk.get("message", {})
+                content = msg.get("content")
+                if content:
+                    parts.append(content)
+                    if on_token is not None:
+                        on_token(content)
+                if chunk.get("done"):
+                    break
+        self.call_count += 1
+        return "".join(parts)
+
     async def chat_with_tools_stream(
         self,
         messages: list[dict],
         tools: list[dict],
         on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
         temperature: float = 0.2,
         max_tokens: int = 4096,
     ) -> dict:
-        """Stream content chunks via on_token; return the assembled assistant message."""
+        """Stream content chunks via on_token; return the assembled assistant message.
+
+        For thinking models (qwen3.6, deepseek-r1, etc.), reasoning tokens
+        stream via `on_reasoning` if provided. This gives users visibility
+        during the model's silent thinking phase, which can be 10-30s for
+        non-trivial requests.
+        """
         context_limit = await self.get_context_limit()
         max_tokens = self._dynamic_max_tokens(messages, context_limit)
         payload = self._build_payload(messages, temperature, max_tokens, stream=True)
@@ -217,6 +266,10 @@ class LLMClient:
                 chunk = json.loads(data_str)
                 choice = chunk["choices"][0]
                 delta = choice.get("delta", {})
+
+                reasoning = delta.get("reasoning")
+                if reasoning and on_reasoning is not None:
+                    on_reasoning(reasoning)
 
                 content = delta.get("content")
                 if content:

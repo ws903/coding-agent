@@ -454,6 +454,88 @@ async def test_chat_json_raises_on_unparseable(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_with_tools_stream_forwards_reasoning(client):
+    """Reasoning chunks from delta.reasoning should fire on_reasoning."""
+    chunks = [
+        'data: {"choices":[{"delta":{"reasoning":"thinking..."}}]}',
+        'data: {"choices":[{"delta":{"reasoning":" more"}}]}',
+        'data: {"choices":[{"delta":{"content":"answer"}}]}',
+        "data: [DONE]",
+    ]
+
+    async def mock_aiter_lines():
+        for line in chunks:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_lines = mock_aiter_lines
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    content_chunks: list[str] = []
+    reasoning_chunks: list[str] = []
+    msg = await client.chat_with_tools_stream(
+        [{"role": "user", "content": "x"}],
+        tools=[{"type": "function", "function": {"name": "f"}}],
+        on_token=content_chunks.append,
+        on_reasoning=reasoning_chunks.append,
+    )
+
+    assert reasoning_chunks == ["thinking...", " more"]
+    assert content_chunks == ["answer"]
+    assert msg["content"] == "answer"
+
+
+@pytest.mark.asyncio
+async def test_quick_chat_stream_uses_native_endpoint_with_think_false(client):
+    """quick_chat_stream must hit /api/chat (not /v1) and pass think=False."""
+    chunks = [
+        '{"message":{"content":"Hi"},"done":false}',
+        '{"message":{"content":" there"},"done":false}',
+        '{"message":{"content":"!"},"done":true}',
+    ]
+
+    async def mock_aiter_lines():
+        for line in chunks:
+            yield line
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_lines = mock_aiter_lines
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=False)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.is_closed = False
+    client._client = mock_client
+
+    tokens: list[str] = []
+    result = await client.quick_chat_stream(
+        [{"role": "user", "content": "hi"}], on_token=tokens.append
+    )
+
+    assert result == "Hi there!"
+    assert tokens == ["Hi", " there", "!"]
+
+    # URL must be native /api/chat, not /v1/...
+    call_args = mock_client.stream.call_args
+    url = call_args.args[1]
+    assert url.endswith("/api/chat"), f"expected /api/chat, got {url}"
+
+    # Payload must include think:false to skip reasoning.
+    payload = call_args.kwargs["json"]
+    assert payload["think"] is False
+    assert payload["stream"] is True
+
+
+@pytest.mark.asyncio
 async def test_chat_records_usage_without_usage_field(client):
     resp = MagicMock()
     resp.status_code = 200
