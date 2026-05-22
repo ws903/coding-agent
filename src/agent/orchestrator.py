@@ -4,6 +4,7 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from agent.command_policy import CommandBlocked
@@ -35,7 +36,7 @@ class Orchestrator:
         tools: FileTools,
         db: AgentDB,
         project_root: Path,
-        on_status: callable | None = None,
+        on_status: Callable[[str], None] | None = None,
         git_ops: GitOps | None = None,
         lint_gate: LintGate | None = None,
         max_steps: int = 20,
@@ -90,7 +91,7 @@ class Orchestrator:
         self,
         task: str,
         mode: str = "autonomous",
-        approve_plan: callable | None = None,
+        approve_plan: Callable[..., bool] | None = None,
     ) -> dict:
         conv_id = self.db.create_conversation(mode, task)
         self.db.add_message(conv_id, "user", task)
