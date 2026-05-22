@@ -63,7 +63,7 @@ class LLMClient:
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
-            await self._client.close()
+            await self._client.aclose()
 
     def _record_usage(self, data: dict) -> None:
         usage = data.get("usage", {})
