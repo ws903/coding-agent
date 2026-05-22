@@ -23,6 +23,7 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 - **Native Tool Calling** -- Executor uses structured OpenAI-format `tool_calls` (not regex-parsed text). Self-describing schemas, no parse-retry loop
 - **Streaming Output** -- Tokens stream into the REPL in real-time as the executor reasons
 - **MCP Support** -- Extend the executor with [Model Context Protocol](https://modelcontextprotocol.io/) servers (GitHub, filesystem, Postgres, etc.) via a `.mcp.json` config
+- **Skills** -- User-extensible markdown skills in `.agent/skills/`. Progressive disclosure: only descriptions in context until the model calls `read_skill(name=...)`
 - **Two Modes** -- Interactive REPL with plan approval, or autonomous fire-and-forget
 - **Pluggable Models** -- Swap models by changing a URL and model name. No code changes
 - **Pluggable Backends** -- Ollama, TabbyAPI/ExLlamaV3, LM Studio, vLLM, or any OpenAI-compatible server
@@ -165,6 +166,35 @@ Configure which commands run after every step:
 ```
 
 If no verification commands are configured, the verifier is a no-op.
+
+### Skills
+
+Drop reusable instructions into `.agent/skills/` and the executor sees them in its system prompt as a one-line catalog. When a skill applies, the model calls `read_skill(name=...)` to load the full body -- so each skill costs only its description in context until used (progressive disclosure).
+
+Two layouts are supported:
+
+```
+.agent/skills/
+  code-review.md            # single-file skill
+  debug/
+    SKILL.md                # directory skill (lets you bundle resources)
+```
+
+A skill is a markdown file with minimal YAML frontmatter:
+
+```markdown
+---
+name: code-review
+description: Review the current diff for correctness, security, and style.
+---
+1. Run the linter / type checker first; address those before anything else.
+2. Read each changed file in full.
+3. Flag any new public API, side effect, or invariant change.
+```
+
+Only `name` and `description` are read from the frontmatter (everything else is ignored, so future fields won't break compatibility). If `name` is omitted, the filename or directory name is used.
+
+Skills are user-extensible -- they live in your project, not in the coding-agent repo. The agent never modifies them.
 
 ### MCP Servers
 
@@ -365,7 +395,7 @@ uvx ruff format src/ tests/          # Format
 - [x] **Native tool calling** -- Executor uses structured OpenAI-format `tool_calls` (PR #21)
 - [x] **Streaming output** -- Tokens stream live in the REPL (PR #22)
 - [x] **MCP integration** -- External tools via Model Context Protocol servers (this PR)
-- [ ] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (filesystem-discovered)
+- [x] **Skills system** -- User-extensible markdown skills in `.agent/skills/` (this PR)
 - [ ] **Subagent dispatch** -- Spawn focused sub-LLMs for code-review, devil's-advocate, debug
 - [ ] **Codebase indexing** -- Tree-sitter map (lazy) so the planner sees structure not just files
 - [ ] **Structured output** -- Grammar-constrained generation (GBNF/JSON schema) for edits
