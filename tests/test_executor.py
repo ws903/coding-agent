@@ -152,6 +152,35 @@ async def test_execute_with_errors_includes_error(executor, mock_client, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_execute_includes_completed_steps_summary(
+    executor, mock_client, tmp_path
+):
+    mock_client.chat_with_tools = AsyncMock(return_value=_msg(content="ok"))
+    step = Step(id=2, action="Write tests", files_needed=[])
+    await executor.execute(
+        step,
+        completed_steps=[{"step_id": 1, "action": "Add feature"}],
+    )
+
+    messages = mock_client.chat_with_tools.call_args.args[0]
+    user_content = messages[1]["content"]
+    assert "Already completed" in user_content
+    assert "Add feature" in user_content
+
+
+@pytest.mark.asyncio
+async def test_execute_omits_completed_section_when_empty(
+    executor, mock_client, tmp_path
+):
+    mock_client.chat_with_tools = AsyncMock(return_value=_msg(content="ok"))
+    step = Step(id=1, action="First step", files_needed=[])
+    await executor.execute(step)
+
+    messages = mock_client.chat_with_tools.call_args.args[0]
+    assert "Already completed" not in messages[1]["content"]
+
+
+@pytest.mark.asyncio
 async def test_execute_tool_loop_returns_tool_results(executor, mock_client, tmp_path):
     (tmp_path / "foo.py").write_text("x = 1\n")
     mock_client.chat_with_tools = AsyncMock(
