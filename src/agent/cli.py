@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -16,6 +17,11 @@ from agent.planner import Planner
 from agent.sandbox import Sandbox
 from agent.tools import FileTools
 from agent.verifier import Verifier
+
+# Load .env from the coding-agent repo root (gitignored) so users can set
+# AGENT_BASE_URL / AGENT_MODEL once without touching shell config.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_REPO_ROOT / ".env")
 
 DEFAULT_MODEL = "qwen3.6:35b"
 DEFAULT_BASE_URL = "http://localhost:11434/v1"

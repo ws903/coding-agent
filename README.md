@@ -139,7 +139,19 @@ uv run agent --task "refactor the database module to use connection pooling" --a
 
 ## Configuration
 
-Settings are stored per-project in SQLite at `{project}/.agent/agent.db`. Set them via `/config` in interactive mode.
+Three layers, in precedence order: **CLI flag → env var → `.env` file → built-in default**.
+
+For things that vary per-project (e.g. `verify_commands`), use SQLite via `/config` in interactive mode (stored at `{project}/.agent/agent.db`).
+
+For things that should follow you across all projects (e.g. pointing at a remote Ollama backend), drop a gitignored `.env` in the coding-agent repo root:
+
+```
+# coding-agent/.env  (already in .gitignore)
+AGENT_BASE_URL=http://192.168.1.42:11434/v1
+AGENT_MODEL=qwen3.6:35b
+```
+
+The agent loads this on every invocation, so `uv run agent` from any project picks up your config.
 
 ### Verification Commands
 
