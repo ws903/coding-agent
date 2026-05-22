@@ -302,6 +302,53 @@ async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exit_word", ["exit", "quit", "q", ":q", "/exit", "EXIT", "Quit"]
+)
+@patch("agent.cli.build_orchestrator")
+@patch("agent.cli.Prompt")
+@patch("agent.cli.console")
+async def test_run_interactive_bare_word_exit(
+    mock_console, mock_prompt, mock_build, exit_word
+):
+    """Bare 'exit'/'quit'/'q'/':q'/'/exit' (case-insensitive) all exit."""
+    mock_prompt.ask.return_value = exit_word
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+    )
+    mock_orch = _mock_orch()
+    mock_build.return_value = mock_orch
+    await run_interactive(args)
+    # Should exit without ever invoking the planner/run loop.
+    mock_orch.run.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("agent.cli.build_orchestrator")
+@patch("agent.cli.Prompt")
+@patch("agent.cli.console")
+async def test_run_interactive_exit_phrase_still_plans(
+    mock_console, mock_prompt, mock_build
+):
+    """'exit the loop in main.py' is a real task and should reach the planner."""
+    mock_prompt.ask.side_effect = ["exit the loop in main.py", "/quit"]
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+    )
+    mock_orch = _mock_orch()
+    mock_orch.run = AsyncMock(return_value={"status": "completed"})
+    mock_build.return_value = mock_orch
+    await run_interactive(args)
+    mock_orch.run.assert_called_once()
+
+
+@pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli.Prompt")
 @patch("agent.cli.console")
