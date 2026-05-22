@@ -7,7 +7,7 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-A terminal-based coding agent that runs entirely on local hardware at zero cost. Uses open-source LLMs via [Ollama](https://ollama.com) (or any OpenAI-compatible backend) for inference. Implements a planner/executor architecture with automated verification.
+A terminal-based coding agent that runs entirely on local hardware at zero cost. Uses open-source LLMs via [Ollama](https://ollama.com) (or any OpenAI-compatible backend) for inference. Implements a planner/executor architecture with automated verification, git-based rollback, and lint-gated edits.
 
 Built from scratch in Python. No LangChain, no frameworks, no API fees.
 
@@ -15,8 +15,11 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 
 - **Planner/Executor Architecture** -- A planning LLM breaks tasks into steps, an executor LLM implements each step, a deterministic verifier validates the result
 - **Automated Verification** -- Runs tests, linters, and type checkers after every step. Retries on failure, replans when stuck
-- **Adaptive Edit Format** -- Whole-file rewrites for small files (<300 lines), search/replace blocks for large files
-- **Sandboxed Execution** -- All file operations scoped to project root. No path traversal, no escapes
+- **Lint-Gated Edits** -- Runs [ruff](https://docs.astral.sh/ruff/) on every edited Python file. Only newly introduced lint errors trigger rollback; pre-existing errors pass through
+- **Git Snapshots & Rollback** -- Snapshots working tree before each step. Automatically rolls back on failure before replanning
+- **Adaptive Edit Format** -- Whole-file rewrites for small files (<300 lines), search/replace blocks for large files. Whitespace-normalized matching with relative indent preservation
+- **Sandboxed Execution** -- All file operations scoped to project root. Command allowlist blocks destructive operations (`rm -rf`, `sudo`, force-push, etc.)
+- **Token Tracking** -- Displays prompt/completion tokens and LLM call counts after each task
 - **Two Modes** -- Interactive REPL with plan approval, or autonomous fire-and-forget
 - **Pluggable Models** -- Swap models by changing a URL and model name. No code changes
 - **Pluggable Backends** -- Ollama, TabbyAPI/ExLlamaV3, LM Studio, vLLM, or any OpenAI-compatible server
@@ -28,7 +31,7 @@ Built from scratch in Python. No LangChain, no frameworks, no API fees.
 # 1. Install uv (manages Python for you)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# 2. Install Ollama and pull a model
+# 2. Install Ollama and pull the default model
 #    Download from https://ollama.com/download, then:
 ollama pull qwen3:14b
 
@@ -45,7 +48,7 @@ uv run agent --project C:\path\to\your\project
 
 - **[uv](https://docs.astral.sh/uv/)** -- Installs and manages Python automatically
 - **[Ollama](https://ollama.com)** (or any OpenAI-compatible API server)
-- **GPU** -- Recommended: NVIDIA GPU with 10GB+ VRAM. A 14B parameter model at Q4 quantization needs ~9GB
+- **GPU** -- Recommended: NVIDIA GPU with 10GB+ VRAM. The default model (`qwen3:14b` at Q4) needs ~9GB
 
 ## Installation
 
@@ -99,15 +102,16 @@ Type a task or /help for commands.
 The agent will:
 1. Generate a plan and show it for approval
 2. Execute each step (edit files, run commands)
-3. Verify after each step (tests, lint, type-check)
-4. Retry or replan on failure
+3. Lint-check every edited Python file (rollback on new errors)
+4. Verify after each step (tests, lint, type-check)
+5. Retry or replan on failure
 
 #### Slash Commands
 
 | Command    | Description                       |
 |------------|-----------------------------------|
 | `/help`    | Show available commands           |
-| `/status`  | Show current task status          |
+| `/status`  | Show current task progress        |
 | `/config`  | Show/edit project configuration   |
 | `/history` | Show conversation history         |
 | `/abort`   | Abort current execution           |
@@ -128,7 +132,7 @@ uv run agent --task "refactor the database module to use connection pooling" --a
 | `--project`  | `.`                              | Project root directory               |
 | `--auto`     | off                              | Run in autonomous mode               |
 | `--task`     | --                               | Task description (required w/ `--auto`) |
-| `--model`    | `qwen3:14b`                      | Model name                           |
+| `--model`    | `qwen3:14b`               | Model name                           |
 | `--base-url` | `http://localhost:11434/v1`       | LLM API base URL                     |
 | `--max-steps`| `20`                             | Maximum execution steps              |
 | `--step`     | off                              | Approve each step individually       |
@@ -153,7 +157,7 @@ Use a reasoning-focused model for planning and a code-optimized model for execut
 
 ```
 /config planner_model qwen3:14b
-/config executor_model qwen3-coder:14b
+/config executor_model qwen3:14b
 ```
 
 Both point at the same backend by default. You can also split backends:
@@ -182,13 +186,20 @@ uv run agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
 
 ## Recommended Models
 
+Models sized for 16GB VRAM (e.g. NVIDIA RTX 5070 Ti, RTX 4080).
+
 | Model | VRAM (Q4) | Best For |
 |-------|-----------|----------|
-| **Qwen3-14B** | ~9 GB | All-rounder, `/think` toggle for reasoning vs speed |
+| **Qwen3-14B** | ~9 GB | **Default.** All-rounder with `/think` toggle for reasoning vs speed |
 | Phi-4-Reasoning-Plus 14B | ~9 GB | Planning -- strongest reasoning at 14B |
-| Qwen3-Coder-14B | ~9 GB | Execution -- code-optimized |
-| Devstral Small 2 (24B) | ~14 GB | Execution -- highest SWE-bench at this size |
-| Qwen3-Coder-30B-A3B (MoE) | ~15-17 GB | Best local coding model (tight on 16GB) |
+| Devstral Small 2 (24B) | ~14 GB | High SWE-bench score, tight fit on 16GB |
+
+For 24GB+ VRAM (RTX 4090, RTX 5080):
+
+| Model | VRAM (Q4) | Best For |
+|-------|-----------|----------|
+| Qwen3-Coder-30B-A3B (MoE) | ~19 GB | Best local coding model. 30B total, 3B active per token |
+| Qwen3.5-35B-A3B (MoE) | ~22 GB | Strongest agentic performance |
 
 ## Architecture
 
@@ -202,60 +213,69 @@ uv run agent --base-url http://localhost:5000/v1 --model qwen3-14b-exl2
               ┌────────▼────────┐
               │  ORCHESTRATOR   │
               │  plan -> execute │
-              │  -> verify ->    │
-              │  replan/done    │
-              └───┬─────────┬───┘
-                  │         │
-        ┌─────────▼──┐  ┌──▼──────────┐
-        │  PLANNER   │  │  EXECUTOR   │
-        │  Breaks    │  │  Edits files │
-        │  task into │  │  Runs cmds   │
-        │  steps     │  │  One step    │
-        │            │  │  at a time   │
-        └─────┬──────┘  └──────┬──────┘
-              │                │
-              └────────┬───────┘
-                       │
-              ┌────────▼────────┐
-              │   LLM CLIENT   │
-              │  base_url +    │
-              │  model string  │
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │   VERIFIER     │
-              │  No LLM.       │
-              │  Runs tests,   │
-              │  lint, types.  │
-              │  Pass/fail.    │
-              └────────────────┘
+              │  -> lint-gate -> │
+              │  verify -> next/ │
+              │  rollback/replan │
+              └───┬────┬────┬───┘
+                  │    │    │
+        ┌─────────▼┐ ┌▼────▼──────────┐
+        │ PLANNER  │ │   EXECUTOR     │
+        │ Breaks   │ │  Edits files    │
+        │ task into│ │  Runs cmds      │
+        │ steps    │ │  One step       │
+        │          │ │  at a time      │
+        └────┬─────┘ └───────┬────────┘
+             │               │
+             └───────┬───────┘
+                     │
+            ┌────────▼────────┐
+            │   LLM CLIENT   │
+            │  Shared client  │
+            │  Retry+backoff  │
+            │  Token tracking │
+            └────────┬────────┘
+                     │
+         ┌───────────┼───────────┐
+         │           │           │
+   ┌─────▼─────┐ ┌──▼────┐ ┌───▼──────┐
+   │ VERIFIER  │ │ LINT  │ │ GIT OPS  │
+   │ Tests,    │ │ GATE  │ │ Snapshot │
+   │ lint,     │ │ ruff  │ │ before   │
+   │ types.    │ │ diff  │ │ each     │
+   │ Pass/fail │ │ gate  │ │ step,    │
+   │           │ │       │ │ rollback │
+   └───────────┘ └───────┘ └──────────┘
 ```
 
 ### How It Works
 
-1. **Plan** -- The planner LLM receives the task + project file tree and outputs a step-by-step plan in Markdown
-2. **Execute** -- For each step, the executor receives only the relevant files and produces file edits
-3. **Apply** -- Edits are applied to disk with exact matching and a whitespace-normalized fallback
-4. **Verify** -- Configured commands (tests, lint, type-check) run. All must pass to proceed
-5. **Retry** -- On failure, the executor retries with error output (up to 2 attempts)
-6. **Replan** -- After 2 failed retries, the planner generates a revised plan (up to 3 replans)
+1. **Plan** -- The planner LLM receives the task + project file tree + environment info and outputs a step-by-step plan
+2. **Snapshot** -- Git snapshots the working tree before each step for safe rollback
+3. **Execute** -- The executor receives only the relevant files and produces file edits
+4. **Lint Gate** -- Every edited Python file is checked with ruff. Pre-existing errors are ignored; only newly introduced errors trigger rollback
+5. **Apply** -- Edits are applied with exact matching and a whitespace-normalized fallback that preserves relative indentation
+6. **Verify** -- Configured commands (tests, lint, type-check) run. All must pass to proceed
+7. **Retry** -- On failure, the executor retries with error output (up to 2 attempts)
+8. **Rollback & Replan** -- After 2 failed retries, git rolls back, and the planner generates a revised plan. Previously completed steps are skipped (up to 3 replans)
 
 ### Error Recovery
 
 ```
 Step execution
     |
-    |-- Verification passes --> next step
+    ├── Lint gate fails (new errors) --> rollback file, retry
     |
-    |-- Verification fails --> executor retry (attempt 2)
+    ├── Verification passes --> next step
+    |
+    ├── Verification fails --> executor retry (attempt 2)
     |       |
-    |       |-- passes --> next step
-    |       +-- fails --> replan (planner generates new plan)
+    |       ├── passes --> next step
+    |       └── fails --> git rollback + replan
     |
-    +-- Edit fails to apply --> retry with actual file contents
+    └── Edit fails to apply --> retry with actual file contents
             |
-            |-- applies --> verify
-            +-- fails again --> replan
+            ├── applies --> lint gate --> verify
+            └── fails again --> git rollback + replan
 ```
 
 Every file edit is recorded with before/after snapshots in SQLite for full auditability.
@@ -271,16 +291,19 @@ coding-agent/
 │   ├── planner.py         # Planner LLM calls + plan parsing
 │   ├── executor.py        # Executor LLM calls + edit parsing
 │   ├── verifier.py        # Deterministic command runner
-│   ├── llm_client.py      # Async HTTP client (OpenAI-compatible)
+│   ├── llm_client.py      # Async HTTP client with retry + backoff
 │   ├── sandbox.py         # Path validation, command sandboxing
 │   ├── tools.py           # File operations (read, write, edit, list, search)
 │   ├── parser.py          # Markdown plan parser, edit format parser
+│   ├── lint_gate.py       # Ruff-based lint gating with pre/post diffing
+│   ├── git_ops.py         # Git snapshot, rollback, diff
+│   ├── command_policy.py  # Command allowlist and block patterns
 │   ├── db.py              # SQLite storage
 │   ├── models.py          # Shared dataclasses
 │   └── prompts/
 │       ├── planner.md     # Planner system prompt
 │       └── executor.md    # Executor system prompt
-├── tests/                 # 80 tests
+├── tests/                 # 245 tests
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
@@ -291,6 +314,7 @@ coding-agent/
 ```bash
 uv sync                              # Install all dependencies
 uv run pytest tests/ -v              # Run tests
+uv run pytest tests/ --cov           # Run tests with coverage
 uv run pytest tests/test_parser.py   # Run a specific test file
 uvx ruff check src/ tests/           # Lint
 uvx ruff format src/ tests/          # Format
@@ -299,26 +323,41 @@ uvx ruff format src/ tests/          # Format
 ## Roadmap
 
 - [ ] **Native tool calling** -- Ollama and TabbyAPI now support OpenAI-compatible function calling. Migrate from text-parsed edits to structured tool use for higher reliability
-- [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 supports prefix caching. Reuse KV cache across executor calls on the same file to cut time-to-first-token
 - [ ] **Structured output** -- Use grammar-constrained generation (GBNF/JSON schema) to guarantee valid edit blocks instead of regex parsing
+- [ ] **Prompt caching** -- TabbyAPI/ExLlamaV3 supports prefix caching. Reuse KV cache across executor calls on the same file to cut time-to-first-token
+- [ ] **Streaming output** -- Stream executor responses to show progress in real-time
+- [ ] **Step-level auto-commits** -- Git commit after each successful step with descriptive message
+- [ ] **Cross-step context** -- Feed executor a summary of prior steps to reduce redundant reads
 - [ ] **Codebase indexing** -- Embed files with a local model for retrieval. Give the planner semantic search over the project instead of just a file tree
 - [ ] **Parallel step execution** -- When planner identifies independent steps, execute them concurrently
-- [ ] **Slash commands as markdown files** -- Discoverable, user-extensible commands (`.agent/commands/*.md`)
-- [ ] **Layered configuration** -- Global (`~/.agent/settings.json`) + project (`.agent/settings.json`) config, modeled after Claude Code
-- [ ] **Hooks** -- Pre/post tool use event system for validation and logging
 - [ ] **MCP integration** -- Connect external tools via Model Context Protocol servers
 - [ ] **Web UI** -- Browser-based chat interface accessible from phone/laptop, sharing the same inference backend
-- [ ] **Git integration** -- Auto-commit after successful steps, branch management
 
 ## Remote Access
 
 The agent runs in a terminal, so you can access it from any machine via SSH:
 
 ```bash
-ssh user@windows-machine
+ssh user@your-machine
 cd /path/to/coding-agent
 uv run agent --project /path/to/target-project
 ```
+
+## Web Chat UI (Open WebUI)
+
+[Open WebUI](https://docs.openwebui.com/) runs alongside Ollama for browser-based chat against the same models -- useful for phone access (pair with Tailscale) or general non-coding chat. Requires Docker Desktop and `OLLAMA_HOST=0.0.0.0` set so the container can reach the host's Ollama.
+
+```powershell
+docker run -d `
+  -p 8080:8080 `
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 `
+  -v open-webui:/app/backend/data `
+  --name open-webui `
+  --restart always `
+  ghcr.io/open-webui/open-webui:main
+```
+
+First-run setup at `http://localhost:8080` -- the first account created becomes admin.
 
 ## License
 
