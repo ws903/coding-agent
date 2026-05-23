@@ -901,23 +901,25 @@ def test_render_status_default_is_dim_print(mock_console):
 
 
 @patch("agent.cli.console")
-def test_print_welcome_banner_basic(mock_console):
+def test_print_welcome_banner_basic(mock_console, tmp_path):
     orch = _mock_orch()
     args = Namespace(model="qwen3.6:35b")
-    _print_welcome_banner(orch, args, __import__("pathlib").Path("/tmp/proj"))
+    _print_welcome_banner(orch, args, tmp_path)
     printed = _all_printed(mock_console)
     assert "qwen3.6:35b" in printed
-    assert "/tmp/proj" in printed
+    # tmp_path stringifies with the platform's native separators (/ on Linux,
+    # \ on Windows) -- assert via its own str() rather than a hard-coded path.
+    assert str(tmp_path) in printed
 
 
 @patch("agent.cli.console")
-def test_print_welcome_banner_with_mcp_and_skills(mock_console):
+def test_print_welcome_banner_with_mcp_and_skills(mock_console, tmp_path):
     orch = _mock_orch()
     orch.executor.skills.skills = ["skill-a", "skill-b"]
     orch.executor.agents.roles = ["reviewer"]
     orch.executor.mcp.connected_servers = ["filesystem"]
     args = Namespace(model="qwen3.6:35b")
-    _print_welcome_banner(orch, args, __import__("pathlib").Path("/tmp/proj"))
+    _print_welcome_banner(orch, args, tmp_path)
     printed = _all_printed(mock_console)
     assert "filesystem" in printed
     assert "2 skills" in printed
