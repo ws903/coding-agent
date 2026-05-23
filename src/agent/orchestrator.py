@@ -1,6 +1,7 @@
 # src/agent/orchestrator.py
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -67,9 +68,21 @@ class Orchestrator:
         self._current_step: str = ""
         self._steps_executed = 0
         self._total_steps = 0
+        # asyncio handles for thread-safe cancellation. Captured in run()
+        # so abort() can cancel an in-flight LLM HTTP call mid-await from
+        # another thread (e.g. the ESC watcher).
+        self._run_asyncio_task: asyncio.Task | None = None
+        self._run_loop: asyncio.AbstractEventLoop | None = None
 
     def abort(self) -> None:
         self._aborted = True
+        # Cancel the in-flight asyncio task from any thread. Without this,
+        # abort() just sets a flag that's only checked between steps -- the
+        # planner's HTTP call would finish naturally before we noticed.
+        loop = self._run_loop
+        task = self._run_asyncio_task
+        if loop is not None and task is not None and not task.done():
+            loop.call_soon_threadsafe(task.cancel)
 
     def status(self) -> AgentStatus:
         return AgentStatus(
@@ -104,7 +117,31 @@ class Orchestrator:
         mode: str = "autonomous",
         approve_plan: Callable[..., bool] | None = None,
     ) -> dict:
+        # Capture handles so abort() can cancel an in-flight HTTP call.
+        self._run_asyncio_task = asyncio.current_task()
+        self._run_loop = asyncio.get_running_loop()
+        try:
+            return await self._run_inner(task, mode, approve_plan)
+        except asyncio.CancelledError:
+            # Only treat as a clean abort if WE cancelled (via abort()).
+            # Other cancellations (e.g. supervisor shutdown) must propagate.
+            if not self._aborted:
+                raise
+            self.db.update_conversation_status(self._conv_id, "aborted")
+            return {"status": "aborted", "conv_id": self._conv_id}
+        finally:
+            self._run_asyncio_task = None
+            self._run_loop = None
+
+    async def _run_inner(
+        self,
+        task: str,
+        mode: str,
+        approve_plan: Callable[..., bool] | None,
+    ) -> dict:
         conv_id = self.db.create_conversation(mode, task)
+        # Stash conv_id so the cancellation handler in run() can return it.
+        self._conv_id = conv_id
         self.db.add_message(conv_id, "user", task)
 
         self._aborted = False
