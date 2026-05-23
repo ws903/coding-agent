@@ -9,7 +9,9 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.syntax import Syntax
 from rich.table import Table
+from rich.tree import Tree
 
 from agent.db import AgentDB
 from agent.executor import Executor
@@ -150,7 +152,48 @@ def build_orchestrator(
         db=db,
         project_root=project_root,
         on_status=_render_status,
+        on_edit_applied=_render_edit_diff if stream else None,
         max_steps=max_steps,
+    )
+
+
+# Cap diff output so a 2000-line rewrite doesn't flood the terminal.
+_MAX_DIFF_LINES = 40
+
+
+def _render_edit_diff(
+    path: str, action: str, before: str | None, after: str | None
+) -> None:
+    """Render an inline syntax-highlighted unified diff for a single edit."""
+    from difflib import unified_diff
+
+    before_lines = (before or "").splitlines(keepends=True)
+    after_lines = (after or "").splitlines(keepends=True)
+    diff_lines = list(
+        unified_diff(
+            before_lines, after_lines, fromfile=f"a/{path}", tofile=f"b/{path}", n=2
+        )
+    )
+    if not diff_lines:
+        return
+
+    truncated = False
+    if len(diff_lines) > _MAX_DIFF_LINES:
+        diff_lines = diff_lines[:_MAX_DIFF_LINES]
+        truncated = True
+    diff_text = "".join(diff_lines)
+    if truncated:
+        diff_text += f"\n... [truncated at {_MAX_DIFF_LINES} lines]\n"
+
+    console.print(
+        Syntax(
+            diff_text,
+            "diff",
+            theme="ansi_dark",
+            line_numbers=False,
+            word_wrap=False,
+            background_color="default",
+        )
     )
 
 
@@ -466,10 +509,11 @@ async def _interactive_loop(orch: Orchestrator) -> None:
             console.print(Markdown(result["answer"]))
             console.print()
         elif status == "completed":
-            console.print("[green]Task completed successfully.[/green]")
+            _show_change_summary(orch, result.get("conv_id", ""))
             _show_token_usage(orch)
         elif status == "failed":
             console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
+            _show_change_summary(orch, result.get("conv_id", ""))
             _show_token_usage(orch)
         elif status == "aborted":
             console.print("[yellow]Task aborted.[/yellow]\n")
@@ -501,12 +545,81 @@ async def run_autonomous(args: argparse.Namespace) -> int:
         console.print(result["answer"])
         return 0
     if result["status"] == "completed":
-        console.print("[green]Task completed successfully.[/green]")
+        _show_change_summary(orch, result.get("conv_id", ""))
         _show_token_usage(orch)
         return 0
     console.print(f"[red]Task failed: {result.get('reason', 'unknown')}[/red]")
+    _show_change_summary(orch, result.get("conv_id", ""))
     _show_token_usage(orch)
     return 1
+
+
+_ACTION_GLYPH = {
+    "create": ("🆕", "green", "created"),
+    "rewrite": ("📝", "yellow", "rewrote"),
+    "search_replace": ("✏️ ", "yellow", "edited"),
+}
+
+
+def _show_change_summary(orch: Orchestrator, conv_id: str) -> None:
+    """Print a Tree of files changed during the task with +/- line counts.
+
+    Falls back to a one-line completion message when there's nothing to
+    enumerate (no conv_id, no edits recorded, or the DB call fails).
+    """
+    edits = []
+    if conv_id:
+        try:
+            edits = orch.db.get_edits(conv_id) or []
+        except (AttributeError, TypeError):
+            edits = []
+
+    if not edits:
+        console.print("[green]✓ Task completed successfully.[/green]")
+        return
+
+    # Collapse multiple edits to the same file into a single entry that uses
+    # the earliest 'before' and the latest 'after' for a clean total delta.
+    per_file: dict[str, dict] = {}
+    for row in edits:
+        path = row.get("file_path", "")
+        if not path:
+            continue
+        entry = per_file.setdefault(
+            path,
+            {
+                "action": row.get("edit_type", ""),
+                "before": row.get("before"),
+                "after": row.get("after"),
+            },
+        )
+        entry["after"] = row.get("after")  # latest after wins
+
+    tree = Tree(
+        f"[bold green]✓[/bold green] [bold]Task complete[/bold] "
+        f"[dim]({len(per_file)} file{'s' if len(per_file) != 1 else ''} changed)[/dim]",
+        guide_style="dim",
+    )
+    for path, info in per_file.items():
+        before_lines = info["before"].count("\n") + 1 if info["before"] else 0
+        after_lines = info["after"].count("\n") + 1 if info["after"] else 0
+        added = max(0, after_lines - before_lines)
+        removed = max(0, before_lines - after_lines)
+
+        icon, color, verb = _ACTION_GLYPH.get(
+            info["action"], ("•", "white", info["action"])
+        )
+        delta_parts = []
+        if added:
+            delta_parts.append(f"[green]+{added}[/green]")
+        if removed:
+            delta_parts.append(f"[red]-{removed}[/red]")
+        delta = " ".join(delta_parts) or "[dim]·[/dim]"
+
+        tree.add(f"{icon} [{color}]{verb}[/{color}] {path} [dim]{delta}[/dim]")
+
+    console.print(tree)
+    console.print()
 
 
 def _show_token_usage(orch: Orchestrator) -> None:
