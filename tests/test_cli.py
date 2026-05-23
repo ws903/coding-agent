@@ -9,6 +9,7 @@ import pytest
 from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
+    _build_repl_keybindings,
     _find_project_root,
     _format_tool_call,
     _llm_classify_intent,
@@ -452,10 +453,10 @@ def test_show_history_with_rows(mock_console):
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
-    mock_prompt.ask.return_value = "/quit"
+async def test_run_interactive_quit(mock_console, mock_input, mock_build):
+    mock_input.return_value = "/quit"
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -472,13 +473,13 @@ async def test_run_interactive_quit(mock_console, mock_prompt, mock_build):
     "exit_word", ["exit", "quit", "q", ":q", "/exit", "EXIT", "Quit"]
 )
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_bare_word_exit(
-    mock_console, mock_prompt, mock_build, exit_word
+    mock_console, mock_input, mock_build, exit_word
 ):
     """Bare 'exit'/'quit'/'q'/':q'/'/exit' (case-insensitive) all exit."""
-    mock_prompt.ask.return_value = exit_word
+    mock_input.return_value = exit_word
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -494,13 +495,13 @@ async def test_run_interactive_bare_word_exit(
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_exit_phrase_still_plans(
-    mock_console, mock_prompt, mock_build
+    mock_console, mock_input, mock_build
 ):
     """'exit the loop in main.py' is a real task and should reach the planner."""
-    mock_prompt.ask.side_effect = ["exit the loop in main.py", "/quit"]
+    mock_input.side_effect = ["exit the loop in main.py", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -516,10 +517,10 @@ async def test_run_interactive_exit_phrase_still_plans(
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_help(mock_console, mock_prompt, mock_build):
-    mock_prompt.ask.side_effect = ["/help", "/quit"]
+async def test_run_interactive_help(mock_console, mock_input, mock_build):
+    mock_input.side_effect = ["/help", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -537,12 +538,12 @@ async def test_run_interactive_help(mock_console, mock_prompt, mock_build):
 @pytest.mark.asyncio
 @patch("agent.cli._show_config")
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_config(
-    mock_console, mock_prompt, mock_build, mock_show_config
+    mock_console, mock_input, mock_build, mock_show_config
 ):
-    mock_prompt.ask.side_effect = ["/config", "/quit"]
+    mock_input.side_effect = ["/config", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -558,12 +559,12 @@ async def test_run_interactive_config(
 @pytest.mark.asyncio
 @patch("agent.cli._show_history")
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_history(
-    mock_console, mock_prompt, mock_build, mock_show_history
+    mock_console, mock_input, mock_build, mock_show_history
 ):
-    mock_prompt.ask.side_effect = ["/history", "/quit"]
+    mock_input.side_effect = ["/history", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -578,10 +579,10 @@ async def test_run_interactive_history(
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_unknown_command(mock_console, mock_prompt, mock_build):
-    mock_prompt.ask.side_effect = ["/foobar", "/quit"]
+async def test_run_interactive_unknown_command(mock_console, mock_input, mock_build):
+    mock_input.side_effect = ["/foobar", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -596,10 +597,10 @@ async def test_run_interactive_unknown_command(mock_console, mock_prompt, mock_b
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_empty_input(mock_console, mock_prompt, mock_build):
-    mock_prompt.ask.side_effect = ["", "   ", "/quit"]
+async def test_run_interactive_empty_input(mock_console, mock_input, mock_build):
+    mock_input.side_effect = ["", "   ", "/quit"]
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -614,12 +615,12 @@ async def test_run_interactive_empty_input(mock_console, mock_prompt, mock_build
 @pytest.mark.asyncio
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_task_completed(
-    mock_console, mock_prompt, mock_build, mock_approve
+    mock_console, mock_input, mock_build, mock_approve
 ):
-    mock_prompt.ask.side_effect = ["Fix the bug", "/quit"]
+    mock_input.side_effect = ["Fix the bug", "/quit"]
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "completed"})
     mock_build.return_value = mock_orch
@@ -640,12 +641,12 @@ async def test_run_interactive_task_completed(
 @pytest.mark.asyncio
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_task_failed(
-    mock_console, mock_prompt, mock_build, mock_approve
+    mock_console, mock_input, mock_build, mock_approve
 ):
-    mock_prompt.ask.side_effect = ["Do something", "/quit"]
+    mock_input.side_effect = ["Do something", "/quit"]
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(
         return_value={"status": "failed", "reason": "syntax error"}
@@ -665,12 +666,12 @@ async def test_run_interactive_task_failed(
 @pytest.mark.asyncio
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
 async def test_run_interactive_task_aborted(
-    mock_console, mock_prompt, mock_build, mock_approve
+    mock_console, mock_input, mock_build, mock_approve
 ):
-    mock_prompt.ask.side_effect = ["Do something", "/quit"]
+    mock_input.side_effect = ["Do something", "/quit"]
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "aborted"})
     mock_build.return_value = mock_orch
@@ -687,10 +688,10 @@ async def test_run_interactive_task_aborted(
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_eof(mock_console, mock_prompt, mock_build):
-    mock_prompt.ask.side_effect = EOFError()
+async def test_run_interactive_eof(mock_console, mock_input, mock_build):
+    mock_input.side_effect = EOFError()
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -705,12 +706,10 @@ async def test_run_interactive_eof(mock_console, mock_prompt, mock_build):
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.Prompt")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
 @patch("agent.cli.console")
-async def test_run_interactive_keyboard_interrupt(
-    mock_console, mock_prompt, mock_build
-):
-    mock_prompt.ask.side_effect = KeyboardInterrupt()
+async def test_run_interactive_keyboard_interrupt(mock_console, mock_input, mock_build):
+    mock_input.side_effect = KeyboardInterrupt()
     args = Namespace(
         project="/tmp/test",
         base_url="http://localhost:11434/v1",
@@ -1075,3 +1074,26 @@ def test_show_token_usage_skips_when_zero(mock_console):
     )
     _show_token_usage(orch)
     mock_console.print.assert_not_called()
+
+
+# --- prompt_toolkit key bindings ---
+
+
+def test_build_repl_keybindings_includes_escape_and_ctrl_c():
+    """ESC and Ctrl+C must be bound; otherwise the user's UX regressed."""
+    from prompt_toolkit.keys import Keys
+
+    kb = _build_repl_keybindings()
+    keys = []
+    for binding in kb.bindings:
+        for key in binding.keys:
+            keys.append(key)
+
+    assert Keys.Escape in keys
+    assert Keys.ControlC in keys
+
+
+# The PromptSession factory itself is one constructor call -- not worth a
+# unit test, and instantiating it on Windows CI hits NoConsoleScreenBufferError
+# because the runner has no attached console. _make_prompt_session is exercised
+# at runtime via _get_session()'s lazy singleton.

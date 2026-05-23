@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -454,10 +457,61 @@ async def run_interactive(args: argparse.Namespace) -> None:
         await orch.executor.mcp.close()
 
 
+def _build_repl_keybindings() -> KeyBindings:
+    """Key bindings for the main REPL prompt.
+
+    ESC clears the input line (matches Claude Code behavior at the prompt).
+    Ctrl+C raises KeyboardInterrupt so the outer loop can exit cleanly.
+    """
+    kb = KeyBindings()
+
+    @kb.add("escape", eager=True)
+    def _esc_clear(event):
+        event.app.current_buffer.reset()
+
+    @kb.add("c-c")
+    def _ctrl_c(event):
+        event.app.exit(exception=KeyboardInterrupt)
+
+    return kb
+
+
+def _make_prompt_session() -> PromptSession:
+    """Build the REPL PromptSession.
+
+    Replaces Rich's Prompt.ask (which used input() underneath and produced
+    garbled escape sequences for arrow keys, ESC, etc.). prompt_toolkit gives
+    us cross-platform line editing, history within a session, and bindable
+    keys -- including ESC to clear the input line.
+    """
+    return PromptSession(
+        message=HTML("<ansicyan><b>></b></ansicyan> "),
+        key_bindings=_build_repl_keybindings(),
+    )
+
+
+_PROMPT_SESSION: PromptSession | None = None
+
+
+def _get_session() -> PromptSession:
+    """Lazy singleton. Avoids constructing a PromptSession at import or loop
+    entry, which triggers Windows-console probing that fails in headless CI.
+    Tests mock `_get_user_input` so this never runs in unit tests."""
+    global _PROMPT_SESSION
+    if _PROMPT_SESSION is None:
+        _PROMPT_SESSION = _make_prompt_session()
+    return _PROMPT_SESSION
+
+
+async def _get_user_input() -> str:
+    """One-line shim that tests patch instead of mocking PromptSession itself."""
+    return await _get_session().prompt_async()
+
+
 async def _interactive_loop(orch: Orchestrator) -> None:
     while True:
         try:
-            user_input = Prompt.ask("[bold cyan]>[/bold cyan]")
+            user_input = await _get_user_input()
         except (EOFError, KeyboardInterrupt):
             console.print("\nGoodbye.")
             break
