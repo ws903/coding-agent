@@ -637,3 +637,61 @@ async def test_lint_gate_passes_does_not_rollback(orchestrator):
     result = await orchestrator.run("Fix the bug", mode="autonomous")
     assert result["status"] == "completed"
     orchestrator.db.save_edit.assert_called()
+
+
+# --- abort() cancels in-flight asyncio task ---
+
+
+@pytest.mark.asyncio
+async def test_abort_cancels_in_flight_planner_call(orchestrator):
+    """Calling abort() while the planner's HTTP call is awaiting must cancel
+    the task immediately, not wait for the call to complete naturally."""
+    import asyncio
+
+    # Make the planner hang forever so we can prove abort() cancels it.
+    async def _hang(*_, **__):
+        await asyncio.Event().wait()  # never set -> waits forever
+
+    orchestrator.planner.generate_plan = _hang
+
+    async def trigger_abort_after_yield():
+        # Yield enough times for run() to reach the planner await.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        orchestrator.abort()
+
+    abort_task = asyncio.create_task(trigger_abort_after_yield())
+    try:
+        result = await asyncio.wait_for(
+            orchestrator.run("anything", mode="autonomous"), timeout=2.0
+        )
+    finally:
+        abort_task.cancel()
+
+    assert result["status"] == "aborted"
+
+
+@pytest.mark.asyncio
+async def test_abort_without_run_in_flight_is_safe(orchestrator):
+    """Calling abort() when there's no active run shouldn't crash."""
+    orchestrator.abort()
+    assert orchestrator._aborted is True
+
+
+@pytest.mark.asyncio
+async def test_unrelated_cancellation_propagates(orchestrator):
+    """If an outside caller cancels run() without setting our _aborted flag,
+    the CancelledError must bubble up rather than being silently swallowed."""
+    import asyncio
+
+    async def _hang(*_, **__):
+        await asyncio.Event().wait()
+
+    orchestrator.planner.generate_plan = _hang
+
+    task = asyncio.create_task(orchestrator.run("anything", mode="autonomous"))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
