@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import json
 
-from agent.agents_manager import AgentRole
-from agent.llm_client import LLMClient
-from agent.tool_schemas import TOOLS
-from agent.tools import FileTools
+from agent.extensions.agents import AgentRole
+from agent.llm.client import LLMClient
+from agent.tools.schemas import TOOLS
+from agent.tools.filesystem import FileTools
 
 MAX_SUBAGENT_ITERATIONS = 8
 
@@ -25,7 +25,7 @@ class SubagentRunner:
         self.tools = tools
 
     async def run(self, role: AgentRole, task: str) -> str:
-        from agent.tool_runner import ToolRunner
+        from agent.tools.runner import ToolRunner
 
         runner = ToolRunner(self.tools)
         messages = [

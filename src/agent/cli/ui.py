@@ -20,12 +20,12 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.tree import Tree
 
-from agent import console as _con  # Use _con.console so tests can mock via
+from agent.cli import console as _con  # Use _con.console so tests can mock via
 # `@patch("agent.console.console")` and the patch is honored at call time.
 
 if TYPE_CHECKING:
-    from agent.models import Plan
-    from agent.orchestrator import Orchestrator
+    from agent.core.models import Plan
+    from agent.core.orchestrator import Orchestrator
 
 # Cap diff output so a 2000-line rewrite doesn't flood the terminal.
 _MAX_DIFF_LINES = 40

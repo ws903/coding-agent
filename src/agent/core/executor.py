@@ -2,22 +2,22 @@
 from collections.abc import Callable
 from importlib import resources
 
-from agent.agents_manager import AgentsManager
-from agent.llm_client import LLMClient
-from agent.mcp_manager import MCPManager
-from agent.models import ExecutionResult, Step
-from agent.skills_manager import SkillsManager
-from agent.subagent_runner import SubagentRunner
-from agent.tool_runner import ToolRunner
-from agent.tool_schemas import TOOLS
-from agent.tools import FileTools
+from agent.extensions.agents import AgentsManager
+from agent.llm.client import LLMClient
+from agent.extensions.mcp import MCPManager
+from agent.core.models import ExecutionResult, Step
+from agent.extensions.skills import SkillsManager
+from agent.core.subagent_runner import SubagentRunner
+from agent.tools.runner import ToolRunner
+from agent.tools.schemas import TOOLS
+from agent.tools.filesystem import FileTools
 
 MAX_TOOL_ITERATIONS = 10
 
 
 def _load_prompt() -> str:
     return (
-        resources.files("agent.prompts")
+        resources.files("agent.llm.prompts")
         .joinpath("executor.md")
         .read_text(encoding="utf-8")
     )

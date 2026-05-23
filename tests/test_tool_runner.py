@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from agent.tool_runner import ToolRunner
-from agent.tools import FileTools
+from agent.tools.runner import ToolRunner
+from agent.tools.filesystem import FileTools
 
 
 def _tc(name: str, args: dict, call_id: str = "c1") -> dict:
@@ -145,7 +145,7 @@ async def test_mcp_tool_dispatched_to_manager(tmp_path):
 
 @pytest.mark.asyncio
 async def test_read_skill_returns_body(tmp_path):
-    from agent.skills_manager import SkillsManager
+    from agent.extensions.skills import SkillsManager
 
     skill_dir = tmp_path / ".agent" / "skills"
     skill_dir.mkdir(parents=True)
@@ -159,7 +159,7 @@ async def test_read_skill_returns_body(tmp_path):
 
 @pytest.mark.asyncio
 async def test_read_skill_unknown_returns_error(tmp_path):
-    from agent.skills_manager import SkillsManager
+    from agent.extensions.skills import SkillsManager
 
     runner = ToolRunner(FileTools(tmp_path), skills=SkillsManager(tmp_path))
     result = await runner.dispatch(_tc("read_skill", {"name": "missing"}))
@@ -177,7 +177,7 @@ async def test_read_skill_without_manager_errors(tmp_path):
 async def test_spawn_agent_dispatches_to_runner(tmp_path):
     from unittest.mock import AsyncMock
 
-    from agent.agents_manager import AgentsManager
+    from agent.extensions.agents import AgentsManager
 
     agents_dir = tmp_path / ".agent" / "agents"
     agents_dir.mkdir(parents=True)
@@ -203,7 +203,7 @@ async def test_spawn_agent_dispatches_to_runner(tmp_path):
 async def test_spawn_agent_unknown_role_errors(tmp_path):
     from unittest.mock import AsyncMock
 
-    from agent.agents_manager import AgentsManager
+    from agent.extensions.agents import AgentsManager
 
     runner = ToolRunner(
         FileTools(tmp_path),

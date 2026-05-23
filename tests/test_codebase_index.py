@@ -1,4 +1,4 @@
-from agent.codebase_index import IGNORED_DIRS, CodebaseIndex
+from agent.env.codebase_index import IGNORED_DIRS, CodebaseIndex
 
 
 def test_empty_project(tmp_path):

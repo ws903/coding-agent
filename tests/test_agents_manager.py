@@ -1,4 +1,4 @@
-from agent.agents_manager import AgentsManager
+from agent.extensions.agents import AgentsManager
 
 
 def test_manager_with_no_agents_dir(tmp_path):

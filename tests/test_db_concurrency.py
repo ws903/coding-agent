@@ -10,12 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from agent.db import AgentDB
+from agent.persistence.db import AgentDB
 
 
 @pytest.fixture
 def db(tmp_path):
-    return AgentDB(tmp_path / ".agent" / "agent.db")
+    return AgentDB(tmp_path / ".agent" / "agent.persistence.db")
 
 
 def test_db_rapid_sequential_writes(db):
@@ -43,7 +43,7 @@ def test_db_concurrent_threads_share_path(tmp_path):
     handles file-level locking). Verifies the per-instance connection
     model isn't fragile across threads.
     """
-    db_path = tmp_path / ".agent" / "agent.db"
+    db_path = tmp_path / ".agent" / "agent.persistence.db"
     AgentDB(db_path).create_conversation("autonomous", "init")
 
     errors: list[Exception] = []
@@ -65,7 +65,7 @@ def test_db_concurrent_threads_share_path(tmp_path):
 
 def test_db_reopen_preserves_data(tmp_path):
     """Closing and reopening the file gets the same data back."""
-    db_path = tmp_path / ".agent" / "agent.db"
+    db_path = tmp_path / ".agent" / "agent.persistence.db"
     db1 = AgentDB(db_path)
     conv_id = db1.create_conversation("autonomous", "persistence check")
     db1.add_message(conv_id, "user", "hello")

@@ -15,10 +15,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent.db import AgentDB
-    from agent.lint_gate import LintGate
-    from agent.models import ExecutionResult, FileEdit
-    from agent.tools import FileTools
+    from agent.persistence.db import AgentDB
+    from agent.safety.lint_gate import LintGate
+    from agent.core.models import ExecutionResult, FileEdit
+    from agent.tools.filesystem import FileTools
 
 logger = logging.getLogger(__name__)
 

@@ -11,13 +11,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from agent.agents_manager import AgentsManager
-from agent.mcp_manager import MCPManager
-from agent.models import FileEdit
-from agent.skills_manager import SkillsManager
-from agent.subagent_runner import SubagentRunner
-from agent.tools import FileTools
+from agent.core.models import FileEdit
+from agent.tools.filesystem import FileTools
+
+if TYPE_CHECKING:
+    # Type-only imports break the cycle:
+    #   tools.runner <- core.executor <- core.__init__ <- core.subagent_runner
+    # SubagentRunner / MCPManager / SkillsManager / AgentsManager are only
+    # used as annotations on ToolRunner.__init__.
+    from agent.core.subagent_runner import SubagentRunner
+    from agent.extensions.agents import AgentsManager
+    from agent.extensions.mcp import MCPManager
+    from agent.extensions.skills import SkillsManager
 
 MAX_OBSERVATION_CHARS = 3000
 

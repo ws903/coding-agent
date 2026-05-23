@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.db import AgentDB
-from agent.executor import Executor
-from agent.llm_client import LLMClient
-from agent.orchestrator import Orchestrator
-from agent.planner import Planner
-from agent.sandbox import Sandbox
-from agent.tools import FileTools
-from agent.verifier import Verifier
+from agent.persistence.db import AgentDB
+from agent.core.executor import Executor
+from agent.llm.client import LLMClient
+from agent.core.orchestrator import Orchestrator
+from agent.core.planner import Planner
+from agent.safety.sandbox import Sandbox
+from agent.tools.filesystem import FileTools
+from agent.core.verifier import Verifier
 
 
 PLAN_RESPONSE = {
@@ -51,7 +51,7 @@ def _final_msg(content: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_full_autonomous_run(tmp_path):
-    db = AgentDB(tmp_path / ".agent" / "agent.db")
+    db = AgentDB(tmp_path / ".agent" / "agent.persistence.db")
 
     mock_llm = AsyncMock(spec=LLMClient)
     mock_llm.chat_json = AsyncMock(return_value=PLAN_RESPONSE)
@@ -97,7 +97,7 @@ async def test_full_autonomous_run(tmp_path):
 
 @pytest.mark.asyncio
 async def test_full_run_with_verification(tmp_path):
-    db = AgentDB(tmp_path / ".agent" / "agent.db")
+    db = AgentDB(tmp_path / ".agent" / "agent.persistence.db")
 
     plan_response = {
         "kind": "plan",

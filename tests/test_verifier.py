@@ -1,5 +1,5 @@
-from agent.verifier import Verifier
-from agent.sandbox import Sandbox
+from agent.core.verifier import Verifier
+from agent.safety.sandbox import Sandbox
 
 
 def test_verify_passes_when_commands_succeed(tmp_path):

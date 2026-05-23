@@ -2,7 +2,7 @@ import subprocess
 
 import pytest
 
-from agent.git_ops import GitOps
+from agent.persistence.git_ops import GitOps
 
 
 @pytest.fixture

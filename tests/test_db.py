@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from agent.db import AgentDB
+from agent.persistence.db import AgentDB
 
 
 def make_db(tmp_path: Path) -> AgentDB:
-    return AgentDB(tmp_path / ".agent" / "agent.db")
+    return AgentDB(tmp_path / ".agent" / "agent.persistence.db")
 
 
 def test_init_creates_tables(tmp_path):

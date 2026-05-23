@@ -24,8 +24,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.markdown import Markdown
 
-from agent.agents_manager import AgentsManager
-from agent.cli_input import (
+from agent.extensions.agents import AgentsManager
+from agent.cli.input import (
     _build_repl_keybindings,
     _esc_aborts,
     _get_session,
@@ -35,7 +35,7 @@ from agent.cli_input import (
     _watch_for_esc_unix,
     _watch_for_esc_win,
 )
-from agent.cli_intent import (
+from agent.cli.intent import (
     _CHAT_TOKENS,
     _CLASSIFIER_PROMPT,
     _fast_chat,
@@ -44,7 +44,7 @@ from agent.cli_intent import (
     _looks_like_chat,
     _route_input,
 )
-from agent.cli_ui import (
+from agent.cli.ui import (
     _ACTION_GLYPH,
     _MAX_DIFF_LINES,
     _TOOL_DISPLAY,
@@ -59,18 +59,18 @@ from agent.cli_ui import (
     _show_status,
     _show_token_usage,
 )
-from agent import console as _con  # See cli_ui for the attribute-access pattern
-from agent.console import console  # re-exported for backwards-compat
-from agent.db import AgentDB
-from agent.executor import Executor
-from agent.llm_client import LLMClient
-from agent.mcp_manager import MCPManager, load_mcp_config
-from agent.orchestrator import Orchestrator
-from agent.planner import Planner
-from agent.sandbox import Sandbox
-from agent.skills_manager import SkillsManager
-from agent.tools import FileTools
-from agent.verifier import Verifier
+from agent.cli import console as _con  # See cli_ui for the attribute-access pattern
+from agent.cli.console import console  # re-exported for backwards-compat
+from agent.persistence.db import AgentDB
+from agent.core.executor import Executor
+from agent.llm.client import LLMClient
+from agent.extensions.mcp import MCPManager, load_mcp_config
+from agent.core.orchestrator import Orchestrator
+from agent.core.planner import Planner
+from agent.safety.sandbox import Sandbox
+from agent.extensions.skills import SkillsManager
+from agent.tools.filesystem import FileTools
+from agent.core.verifier import Verifier
 
 # Re-export names kept for tests + backwards-compat imports.
 __all__ = [

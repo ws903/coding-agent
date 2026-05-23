@@ -1,4 +1,4 @@
-from agent.command_policy import check_command, CommandBlocked
+from agent.safety.command_policy import check_command, CommandBlocked
 
 
 class TestBlockedCommands:

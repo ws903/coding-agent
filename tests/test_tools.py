@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.tools import FileTools
-from agent.sandbox import SecurityError
+from agent.tools.filesystem import FileTools
+from agent.safety.sandbox import SecurityError
 
 
 def make_tools(tmp_path: Path) -> FileTools:

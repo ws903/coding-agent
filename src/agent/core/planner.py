@@ -20,8 +20,8 @@ import json
 import os
 from importlib import resources
 
-from agent.llm_client import LLMClient
-from agent.models import Answer, Plan, Step
+from agent.llm.client import LLMClient
+from agent.core.models import Answer, Plan, Step
 
 MAX_PARSE_RETRIES = 2
 
@@ -42,7 +42,7 @@ RETRY_PROMPT = (
 
 def _load_prompt() -> str:
     return (
-        resources.files("agent.prompts")
+        resources.files("agent.llm.prompts")
         .joinpath("planner.md")
         .read_text(encoding="utf-8")
     )

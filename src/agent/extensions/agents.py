@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent.skills_manager import _parse_frontmatter
+from agent.extensions.skills import _parse_frontmatter
 
 
 @dataclass(frozen=True)

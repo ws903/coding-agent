@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agent import console as _con  # See cli_ui.py for why we use attribute access
+from agent.cli import console as _con  # See cli_ui.py for why we use attribute access
 
 if TYPE_CHECKING:
-    from agent.orchestrator import Orchestrator
+    from agent.core.orchestrator import Orchestrator
 
 # Short conversational inputs that should bypass the planner entirely.
 # Conservative -- we only fast-path obvious greetings; anything ambiguous
