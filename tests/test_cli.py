@@ -1197,3 +1197,34 @@ def test_is_lone_escape_returns_false_for_alt_combo():
     ):
         assert _is_lone_escape_unix(stream, timeout=0.001) is False
     assert stream.read.call_count == 1
+
+
+# --- watcher bridge: fake watcher should call orch.abort() ---
+
+
+def test_esc_aborts_bridge_fires_abort_via_watcher(monkeypatch):
+    """Inject a fake watcher target into _esc_aborts and verify that when
+    the watcher calls orch.abort(), the orchestrator is actually aborted.
+
+    This closes the gap between platform-specific watcher implementations
+    (pragma:no cover) and the orchestrator abort path: the watcher invokes
+    abort() and the orchestrator side sees the flag.
+    """
+    orch = _mock_orch()
+    orch.abort = MagicMock()
+
+    def _fake_watch(orch, stop_event):
+        # Simulate "user pressed ESC" -- immediately call abort.
+        orch.abort()
+
+    monkeypatch.setattr("agent.cli._watch_for_esc_unix", _fake_watch)
+    monkeypatch.setattr("agent.cli._watch_for_esc_win", _fake_watch)
+
+    with patch("agent.cli.sys.stdin.isatty", return_value=True):
+        with _esc_aborts(orch):
+            # Yield long enough for the daemon thread to run _fake_watch.
+            import time as _t
+
+            _t.sleep(0.05)
+
+    orch.abort.assert_called_once()

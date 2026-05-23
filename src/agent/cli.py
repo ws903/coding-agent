@@ -168,6 +168,16 @@ def build_orchestrator(
 # Cap diff output so a 2000-line rewrite doesn't flood the terminal.
 _MAX_DIFF_LINES = 40
 
+# ESC watcher tuning. Values picked to match prompt_toolkit's defaults
+# where applicable; documented inline so future maintainers don't have to
+# guess what these numbers mean.
+_WATCHER_POLL_INTERVAL = 0.1  # seconds between Unix select() polls
+_WATCHER_POLL_INTERVAL_WIN = 0.05  # seconds between Windows kbhit() polls
+_WATCHER_STOP_TIMEOUT = 1.0  # how long _esc_aborts waits for the thread to join
+_ESC_SEQUENCE_DISAMBIG_TIMEOUT = 0.05  # peek-window after \x1b to detect escape
+# sequences (arrow keys etc) before
+# treating it as a lone ESC press
+
 
 def _render_edit_diff(
     path: str, action: str, before: str | None, after: str | None
@@ -513,7 +523,9 @@ async def _get_user_input() -> str:
     return await _get_session().prompt_async()
 
 
-def _is_lone_escape_unix(stream, timeout: float = 0.05) -> bool:
+def _is_lone_escape_unix(
+    stream, timeout: float = _ESC_SEQUENCE_DISAMBIG_TIMEOUT
+) -> bool:
     """After reading 0x1b, return True if it was a standalone ESC press
     (nothing follows within `timeout`) and False if it was the prefix of
     an escape sequence (arrow keys, function keys, Alt+X, etc.).
@@ -559,7 +571,7 @@ def _watch_for_esc_unix(
     try:
         tty.setcbreak(fd)
         while not stop_event.is_set():
-            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            ready, _, _ = select.select([sys.stdin], [], [], _WATCHER_POLL_INTERVAL)
             if not ready:
                 continue
             ch = sys.stdin.read(1)
@@ -579,7 +591,7 @@ def _watch_for_esc_win(
 
     while not stop_event.is_set():
         if not msvcrt.kbhit():
-            time.sleep(0.05)
+            time.sleep(_WATCHER_POLL_INTERVAL_WIN)
             continue
         ch = msvcrt.getch()
         if ch == b"\x1b":
@@ -608,7 +620,7 @@ def _esc_aborts(orch: Orchestrator):
         yield
     finally:
         stop_event.set()
-        thread.join(timeout=1.0)
+        thread.join(timeout=_WATCHER_STOP_TIMEOUT)
 
 
 async def _interactive_loop(orch: Orchestrator) -> None:

@@ -64,7 +64,7 @@ class Orchestrator:
             tools, self.lint, db, on_edit_applied=on_edit_applied
         )
         self._aborted = False
-        self._current_task: str = ""
+        self._task_description: str = ""
         self._current_step: str = ""
         self._steps_executed = 0
         self._total_steps = 0
@@ -90,7 +90,7 @@ class Orchestrator:
 
     def status(self) -> AgentStatus:
         return AgentStatus(
-            task=self._current_task,
+            task=self._task_description,
             current_step=self._current_step,
             steps_executed=self._steps_executed,
             total_steps=self._total_steps,
@@ -157,7 +157,7 @@ class Orchestrator:
         self.db.add_message(conv_id, "user", task)
 
         self._aborted = False
-        self._current_task = task
+        self._task_description = task
         self._steps_executed = 0
 
         project_context = self._build_project_context()
