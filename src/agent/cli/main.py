@@ -307,6 +307,21 @@ def _handle_slash_command(orch: Orchestrator, user_input: str) -> bool:
     return False
 
 
+def _print_backend_unreachable(orch: Orchestrator, exc: Exception) -> None:
+    """Friendly message when the LLM backend is unreachable. Called for any
+    LLM-touching path (classifier, fast-chat, task) so the REPL recovers
+    instead of crashing on a transient network drop."""
+    url = orch.executor.llm.base_url
+    _con.console.print(
+        f"\n[red]Could not reach the LLM backend at[/red] [cyan]{url}[/cyan]"
+    )
+    _con.console.print(
+        f"[dim]{type(exc).__name__}: {exc}[/dim]\n"
+        "[dim]Check that Ollama is running and your network/Tailscale "
+        "connection is up, then try again.[/dim]\n"
+    )
+
+
 async def _interactive_loop(orch: Orchestrator) -> None:
     while True:
         try:
@@ -325,44 +340,41 @@ async def _interactive_loop(orch: Orchestrator) -> None:
         if _handle_slash_command(orch, user_input):
             continue
 
-        if await _route_input(orch, user_input) == "chat":
-            await _fast_chat(orch, user_input)
-            continue
-
-        # Spinner runs in a background thread; on_status prints flow above it
-        # via Rich's Live infrastructure. Auto-disabled on non-TTY (e.g. when
-        # output is piped to a file), so this is safe for all environments.
-        # _esc_aborts wires the ESC key to orch.abort() during the run.
+        # Every LLM-touching path below can raise httpx.ConnectError when the
+        # backend is unreachable (Tailscale drop, Ollama down, host asleep).
+        # Wrap the whole turn in a single handler so chat, classifier, and
+        # task paths all recover gracefully instead of crashing the REPL.
         try:
-            with (
-                _con.console.status(
-                    "[dim]Working...[/dim]", spinner="dots", spinner_style="cyan"
-                ),
-                _esc_aborts(orch),
-            ):
-                result = await orch.run(
-                    user_input, mode="interactive", approve_plan=_approve_plan
-                )
-        except KeyboardInterrupt:
-            # Ctrl+C during a running task: abort gracefully, stay in the REPL.
-            # Same outcome as ESC; this catches the path where orch.run raises
-            # before orch.abort() is checked.
-            orch.abort()
-            _con.console.print("\n[yellow]Interrupted.[/yellow]")
-            continue
+            if await _route_input(orch, user_input) == "chat":
+                await _fast_chat(orch, user_input)
+                continue
+
+            # Spinner runs in a background thread; on_status prints flow above
+            # it via Rich's Live infrastructure. _esc_aborts wires the ESC
+            # key to orch.abort() during the run.
+            try:
+                with (
+                    _con.console.status(
+                        "[dim]Working...[/dim]",
+                        spinner="dots",
+                        spinner_style="cyan",
+                    ),
+                    _esc_aborts(orch),
+                ):
+                    result = await orch.run(
+                        user_input,
+                        mode="interactive",
+                        approve_plan=_approve_plan,
+                    )
+            except KeyboardInterrupt:
+                # Ctrl+C during a running task: abort gracefully, stay in
+                # the REPL. Same outcome as ESC; catches the path where
+                # orch.run raises before orch.abort() is checked.
+                orch.abort()
+                _con.console.print("\n[yellow]Interrupted.[/yellow]")
+                continue
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
-            # Backend unreachable (Tailscale dropped, Ollama down, host asleep).
-            # Tell the user where we were trying to reach and let them retry
-            # rather than crashing the whole REPL.
-            url = orch.executor.llm.base_url
-            _con.console.print(
-                f"\n[red]Could not reach the LLM backend at[/red] [cyan]{url}[/cyan]"
-            )
-            _con.console.print(
-                f"[dim]{type(exc).__name__}: {exc}[/dim]\n"
-                "[dim]Check that Ollama is running and your network/Tailscale "
-                "connection is up, then try again.[/dim]\n"
-            )
+            _print_backend_unreachable(orch, exc)
             continue
         status = result["status"]
         if status == "answered":

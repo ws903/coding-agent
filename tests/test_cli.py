@@ -1306,3 +1306,39 @@ async def test_run_autonomous_connect_error_returns_1(mock_console, mock_build):
     rc = await run_autonomous(args)
     assert rc == 1
     assert "Could not reach the LLM backend" in _all_printed(mock_console)
+
+
+@pytest.mark.asyncio
+@patch("agent.cli.main._fast_chat", new_callable=AsyncMock)
+@patch("agent.cli.main._route_input", new_callable=AsyncMock)
+@patch("agent.cli.main.build_orchestrator")
+@patch("agent.cli.main._get_user_input", new_callable=AsyncMock)
+@patch("agent.cli.console.console")
+async def test_run_interactive_connect_error_on_chat_path_does_not_crash(
+    mock_console, mock_input, mock_build, mock_route, mock_fast_chat
+):
+    """The chat path (_fast_chat) is reached when the user types something
+    short like 'hi'. A ConnectError there must be caught the same way as
+    on the task path -- regression test for the bug where typing 'hi'
+    crashed the REPL even after PR #46 wrapped the orch.run side."""
+    import httpx
+
+    mock_input.side_effect = ["hi", "/quit"]
+    mock_route.return_value = "chat"
+    mock_fast_chat.side_effect = httpx.ConnectError("All connection attempts failed")
+
+    mock_orch = _mock_orch()
+    mock_orch.executor.llm.base_url = "http://100.78.164.3:11434/v1"
+    mock_build.return_value = mock_orch
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+    )
+
+    # Should NOT raise; should print friendly message and reach /quit.
+    await run_interactive(args)
+    printed = _all_printed(mock_console)
+    assert "Could not reach the LLM backend" in printed
+    assert "100.78.164.3" in printed
