@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.agents_manager import AgentRole
-from agent.subagent_runner import ALLOWED_TOOL_NAMES, SubagentRunner
-from agent.tools import FileTools
+from agent.extensions.agents import AgentRole
+from agent.core.subagent_runner import ALLOWED_TOOL_NAMES, SubagentRunner
+from agent.tools.filesystem import FileTools
 
 
 def _role(prompt: str = "You are a reviewer.") -> AgentRole:

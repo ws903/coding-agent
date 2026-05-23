@@ -2,12 +2,12 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent.lint_gate import LintGate, LintError
+from agent.safety.lint_gate import LintGate, LintError
 
 
 @pytest.fixture
 def gate(tmp_path):
-    with patch("agent.lint_gate.shutil.which", return_value="/usr/bin/ruff"):
+    with patch("agent.safety.lint_gate.shutil.which", return_value="/usr/bin/ruff"):
         return LintGate(tmp_path)
 
 
@@ -19,13 +19,13 @@ def py_file(tmp_path):
 
 
 def test_available_when_ruff_found(tmp_path):
-    with patch("agent.lint_gate.shutil.which", return_value="/usr/bin/ruff"):
+    with patch("agent.safety.lint_gate.shutil.which", return_value="/usr/bin/ruff"):
         g = LintGate(tmp_path)
     assert g.available is True
 
 
 def test_not_available_when_ruff_missing(tmp_path):
-    with patch("agent.lint_gate.shutil.which", return_value=None):
+    with patch("agent.safety.lint_gate.shutil.which", return_value=None):
         g = LintGate(tmp_path)
     assert g.available is False
 
@@ -43,7 +43,7 @@ def test_check_file_skips_missing(gate):
 def test_check_file_returns_errors(gate, py_file):
     mock_result = MagicMock()
     mock_result.stdout = '[{"code":"F821","message":"Undefined name","location":{"row":1,"column":5},"end_location":{"row":1,"column":10},"filename":"test.py","fix":null,"cell":null,"noqa_row":1,"severity":"error","url":"https://example.com"}]'
-    with patch("agent.lint_gate.subprocess.run", return_value=mock_result):
+    with patch("agent.safety.lint_gate.subprocess.run", return_value=mock_result):
         errors = gate.check_file("test.py")
     assert len(errors) == 1
     assert errors[0].code == "F821"
@@ -54,7 +54,7 @@ def test_check_file_returns_errors(gate, py_file):
 def test_check_file_returns_empty_on_no_errors(gate, py_file):
     mock_result = MagicMock()
     mock_result.stdout = "[]"
-    with patch("agent.lint_gate.subprocess.run", return_value=mock_result):
+    with patch("agent.safety.lint_gate.subprocess.run", return_value=mock_result):
         errors = gate.check_file("test.py")
     assert errors == []
 
@@ -63,7 +63,7 @@ def test_check_file_handles_timeout(gate, py_file):
     import subprocess
 
     with patch(
-        "agent.lint_gate.subprocess.run",
+        "agent.safety.lint_gate.subprocess.run",
         side_effect=subprocess.TimeoutExpired("ruff", 30),
     ):
         errors = gate.check_file("test.py")
@@ -71,7 +71,7 @@ def test_check_file_handles_timeout(gate, py_file):
 
 
 def test_check_file_not_available(tmp_path, py_file):
-    with patch("agent.lint_gate.shutil.which", return_value=None):
+    with patch("agent.safety.lint_gate.shutil.which", return_value=None):
         g = LintGate(tmp_path)
     assert g.check_file("test.py") == []
 

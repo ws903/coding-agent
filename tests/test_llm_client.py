@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 import pytest
 
-from agent.llm_client import (
+from agent.llm.client import (
     LLMClient,
     _backoff_delay,
     estimate_tokens,
@@ -100,7 +100,7 @@ async def test_chat_retries_on_500(client):
     mock_client.is_closed = False
     client._client = mock_client
 
-    with patch("agent.llm_client.asyncio.sleep", new_callable=AsyncMock):
+    with patch("agent.llm.client.asyncio.sleep", new_callable=AsyncMock):
         result = await client.chat([{"role": "user", "content": "hi"}])
     assert result == "recovered"
     assert mock_client.post.call_count == 2
@@ -115,7 +115,7 @@ async def test_chat_retries_on_connection_error(client):
     mock_client.is_closed = False
     client._client = mock_client
 
-    with patch("agent.llm_client.asyncio.sleep", new_callable=AsyncMock):
+    with patch("agent.llm.client.asyncio.sleep", new_callable=AsyncMock):
         result = await client.chat([{"role": "user", "content": "hi"}])
     assert result == "ok"
     assert mock_client.post.call_count == 2
@@ -129,7 +129,7 @@ async def test_chat_raises_after_max_retries(client):
     client._client = mock_client
 
     with (
-        patch("agent.llm_client.asyncio.sleep", new_callable=AsyncMock),
+        patch("agent.llm.client.asyncio.sleep", new_callable=AsyncMock),
         pytest.raises(httpx.ConnectError),
     ):
         await client.chat([{"role": "user", "content": "hi"}])
@@ -153,7 +153,7 @@ async def test_chat_raises_after_max_retries_on_500(client):
     client._client = mock_client
 
     with (
-        patch("agent.llm_client.asyncio.sleep", new_callable=AsyncMock),
+        patch("agent.llm.client.asyncio.sleep", new_callable=AsyncMock),
         pytest.raises(httpx.HTTPStatusError),
     ):
         await client.chat([{"role": "user", "content": "hi"}])
@@ -183,7 +183,7 @@ async def test_chat_retries_on_429(client):
     mock_client.is_closed = False
     client._client = mock_client
 
-    with patch("agent.llm_client.asyncio.sleep", new_callable=AsyncMock):
+    with patch("agent.llm.client.asyncio.sleep", new_callable=AsyncMock):
         result = await client.chat([{"role": "user", "content": "hi"}])
     assert result == "ok"
 

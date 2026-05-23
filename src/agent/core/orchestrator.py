@@ -6,15 +6,15 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from agent.codebase_index import CodebaseIndex
-from agent.command_policy import CommandBlocked
-from agent.db import AgentDB
-from agent.edit_applier import EditApplier
-from agent.env import EnvironmentDetector
-from agent.executor import Executor
-from agent.git_ops import GitOps
-from agent.lint_gate import LintGate
-from agent.models import (
+from agent.env.codebase_index import CodebaseIndex
+from agent.safety.command_policy import CommandBlocked
+from agent.persistence.db import AgentDB
+from agent.tools.editor import EditApplier
+from agent.env.detector import EnvironmentDetector
+from agent.core.executor import Executor
+from agent.persistence.git_ops import GitOps
+from agent.safety.lint_gate import LintGate
+from agent.core.models import (
     AgentStatus,
     AgentTokenUsage,
     Answer,
@@ -23,9 +23,9 @@ from agent.models import (
     Plan,
     Step,
 )
-from agent.planner import Planner
-from agent.tools import FileTools
-from agent.verifier import Verifier
+from agent.core.planner import Planner
+from agent.tools.filesystem import FileTools
+from agent.core.verifier import Verifier
 
 logger = logging.getLogger(__name__)
 

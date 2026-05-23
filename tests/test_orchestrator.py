@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.lint_gate import LintError, LintResult
-from agent.orchestrator import Orchestrator
-from agent.models import (
+from agent.safety.lint_gate import LintError, LintResult
+from agent.core.orchestrator import Orchestrator
+from agent.core.models import (
     Answer,
     Plan,
     Step,
@@ -428,7 +428,7 @@ async def test_replan_receives_project_context(orchestrator):
 
 @pytest.mark.asyncio
 async def test_blocked_command_logged_and_skipped(orchestrator):
-    from agent.command_policy import CommandBlocked
+    from agent.safety.command_policy import CommandBlocked
 
     result_with_cmd = ExecutionResult(
         file_edits=[FileEdit(path="test.py", action="create", content="pass")],

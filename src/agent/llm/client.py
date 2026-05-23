@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Callable
 
 import httpx
 
-from agent.models import TokenUsage
+from agent.core.models import TokenUsage
 
 DEFAULT_CONTEXT_LIMIT = 8192
 RESPONSE_RESERVE = 4096

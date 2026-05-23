@@ -1,5 +1,5 @@
-from agent.models import VerificationResult
-from agent.sandbox import Sandbox
+from agent.core.models import VerificationResult
+from agent.safety.sandbox import Sandbox
 
 
 class Verifier:

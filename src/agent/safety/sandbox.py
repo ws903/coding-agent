@@ -2,8 +2,8 @@
 import subprocess
 from pathlib import Path
 
-from agent.command_policy import CommandBlocked, check_command
-from agent.models import CommandResult
+from agent.safety.command_policy import CommandBlocked, check_command
+from agent.core.models import CommandResult
 
 
 class SecurityError(Exception):

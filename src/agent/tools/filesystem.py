@@ -2,7 +2,7 @@
 import fnmatch
 from pathlib import Path
 
-from agent.sandbox import Sandbox
+from agent.safety.sandbox import Sandbox
 
 
 def _is_hidden_path(rel_path: Path) -> bool:

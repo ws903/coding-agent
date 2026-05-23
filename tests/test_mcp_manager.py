@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agent.mcp_manager import (
+from agent.extensions.mcp import (
     MCPManager,
     _parse_qualified_name,
     _qualified_name,

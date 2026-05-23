@@ -2,8 +2,8 @@
 
 import pytest
 
-from agent.command_policy import CommandBlocked
-from agent.sandbox import Sandbox, SecurityError
+from agent.safety.command_policy import CommandBlocked
+from agent.safety.sandbox import Sandbox, SecurityError
 
 
 def test_validate_path_within_root(tmp_path):

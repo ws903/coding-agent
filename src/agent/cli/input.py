@@ -21,10 +21,10 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 
-from agent import console as _con  # See cli_ui.py for why we use attribute access
+from agent.cli import console as _con  # See cli_ui.py for why we use attribute access
 
 if TYPE_CHECKING:
-    from agent.orchestrator import Orchestrator
+    from agent.core.orchestrator import Orchestrator
 
 # ESC watcher tuning. Values picked to match prompt_toolkit's defaults
 # where applicable; documented inline so future maintainers don't have to

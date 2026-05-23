@@ -2,10 +2,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.executor import Executor
-from agent.llm_client import LLMClient
-from agent.models import Step
-from agent.tools import FileTools
+from agent.core.executor import Executor
+from agent.llm.client import LLMClient
+from agent.core.models import Step
+from agent.tools.filesystem import FileTools
 
 
 def _tool_call(call_id: str, name: str, args: dict) -> dict:
@@ -219,7 +219,7 @@ async def test_execute_uses_streaming_when_on_token_set(mock_client, tools, tmp_
 
 
 def test_executor_system_prompt_includes_skill_catalog(mock_client, tools, tmp_path):
-    from agent.skills_manager import SkillsManager
+    from agent.extensions.skills import SkillsManager
 
     skill_dir = tmp_path / ".agent" / "skills"
     skill_dir.mkdir(parents=True)
@@ -238,7 +238,7 @@ def test_executor_system_prompt_unchanged_when_no_skills(mock_client, tools):
 
 
 def test_executor_system_prompt_includes_agent_catalog(mock_client, tools, tmp_path):
-    from agent.agents_manager import AgentsManager
+    from agent.extensions.agents import AgentsManager
 
     agents_dir = tmp_path / ".agent" / "agents"
     agents_dir.mkdir(parents=True)

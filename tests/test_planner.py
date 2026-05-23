@@ -2,9 +2,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.llm_client import LLMClient
-from agent.models import Answer, Plan, Step
-from agent.planner import Planner
+from agent.llm.client import LLMClient
+from agent.core.models import Answer, Plan, Step
+from agent.core.planner import Planner
 
 
 PLAN_RESPONSE = {

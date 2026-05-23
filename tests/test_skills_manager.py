@@ -1,4 +1,4 @@
-from agent.skills_manager import SkillsManager, _parse_frontmatter
+from agent.extensions.skills import SkillsManager, _parse_frontmatter
 
 
 def test_parse_frontmatter_full():
