@@ -14,7 +14,6 @@ from agent.cli import (
     _format_tool_call,
     _llm_classify_intent,
     _looks_like_chat,
-    _make_prompt_session,
     _print_welcome_banner,
     _render_edit_diff,
     _render_status,
@@ -1094,10 +1093,7 @@ def test_build_repl_keybindings_includes_escape_and_ctrl_c():
     assert Keys.ControlC in keys
 
 
-def test_make_prompt_session_returns_session_with_keybindings():
-    """The factory should produce a usable PromptSession with our bindings."""
-    from prompt_toolkit import PromptSession
-
-    session = _make_prompt_session()
-    assert isinstance(session, PromptSession)
-    assert session.key_bindings is not None
+# The PromptSession factory itself is one constructor call -- not worth a
+# unit test, and instantiating it on Windows CI hits NoConsoleScreenBufferError
+# because the runner has no attached console. _make_prompt_session is exercised
+# at runtime via _get_session()'s lazy singleton.
