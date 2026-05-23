@@ -695,3 +695,33 @@ async def test_unrelated_cancellation_propagates(orchestrator):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_abort_before_conv_id_set_does_not_crash(orchestrator):
+    """If cancellation fires before _run_inner sets self._conv_id, the
+    except handler must not crash and must skip the DB update (empty
+    conv_id wouldn't match any conversation anyway).
+
+    Simulated by mocking db.create_conversation to mark the orch as aborted
+    and raise CancelledError -- as if the ESC watcher fired exactly between
+    run() capturing the asyncio task and _run_inner setting self._conv_id.
+    """
+    import asyncio
+
+    def _cancel_during_create_conv(*_, **__):
+        orchestrator._aborted = True
+        raise asyncio.CancelledError()
+
+    orchestrator.db.create_conversation = MagicMock(
+        side_effect=_cancel_during_create_conv
+    )
+
+    # The bug this test pins: AttributeError on `self._conv_id` in run()'s
+    # except handler when _run_inner never reached the assignment.
+    result = await orchestrator.run("anything", mode="autonomous")
+    assert result["status"] == "aborted"
+    assert result["conv_id"] == ""
+    # Guard should have skipped the DB call entirely (no empty-string update).
+    update_calls = orchestrator.db.update_conversation_status.call_args_list
+    assert all(c.args[0] != "" for c in update_calls)
