@@ -10,6 +10,7 @@ from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
     _find_project_root,
+    _format_tool_call,
     _llm_classify_intent,
     _looks_like_chat,
     _route_input,
@@ -29,7 +30,26 @@ def _mock_orch() -> MagicMock:
     m.executor.mcp.connect = AsyncMock()
     m.executor.mcp.close = AsyncMock()
     m.executor.mcp.connected_servers = []
+    m.executor.skills.skills = []
+    m.executor.agents.roles = []
     return m
+
+
+def _all_printed(mock_console) -> str:
+    """Flatten everything printed (including Panel/Markdown contents) for
+    substring search in tests. Walks .renderable on Rich renderables so
+    Panel-wrapped text is still discoverable."""
+    parts: list[str] = []
+    for call in mock_console.print.call_args_list:
+        if not call.args:
+            continue
+        first = call.args[0]
+        renderable = getattr(first, "renderable", None)
+        if renderable is not None:
+            parts.append(str(renderable))
+        else:
+            parts.append(str(first))
+    return "\n".join(parts)
 
 
 def test_find_project_root_walks_up_to_git_dir(tmp_path):
@@ -141,6 +161,40 @@ async def test_llm_classify_intent_parses_case_insensitively():
     assert await _llm_classify_intent(orch, "fix it") == "task"
 
 
+# --- tool-call icon rendering ---
+
+
+def test_format_tool_call_known_tool_with_path():
+    out = _format_tool_call("read_file", {"path": "src/agent/cli.py"})
+    assert "read_file" in out
+    assert "src/agent/cli.py" in out
+
+
+def test_format_tool_call_command_arg():
+    out = _format_tool_call("run_command", {"command": "pytest -q"})
+    assert "pytest -q" in out
+
+
+def test_format_tool_call_unknown_tool_still_renders():
+    out = _format_tool_call("bogus_tool", {})
+    assert "bogus_tool" in out
+
+
+def test_format_tool_call_mcp_tool_uses_plug_icon():
+    """MCP tools get a distinct icon since they're external."""
+    out = _format_tool_call("mcp__filesystem__read", {"path": "/tmp/x"})
+    assert "mcp__filesystem__read" in out
+    assert "/tmp/x" in out
+
+
+def test_format_tool_call_truncates_long_paths():
+    long_path = "x" * 200
+    out = _format_tool_call("read_file", {"path": long_path})
+    # Should not contain the raw long string -- truncated with ellipsis.
+    assert "..." in out
+    assert "x" * 200 not in out
+
+
 def test_parse_args_interactive():
     args = parse_args([])
     assert args.auto is False
@@ -205,9 +259,8 @@ def test_approve_plan_accepted(mock_console, mock_prompt):
     result = _approve_plan(plan)
     assert result is True
     mock_prompt.ask.assert_called_once_with("Proceed?", choices=["y", "n"], default="y")
-    # Verify plan goal was printed
-    print_calls = [str(c) for c in mock_console.print.call_args_list]
-    assert any("Refactor module" in c for c in print_calls)
+    # Goal text lives inside the Panel renderable.
+    assert "Refactor module" in _all_printed(mock_console)
 
 
 @patch("agent.cli.Prompt")
@@ -237,9 +290,9 @@ def test_approve_plan_displays_files(mock_console, mock_prompt):
         ],
     )
     _approve_plan(plan)
-    print_calls = [str(c) for c in mock_console.print.call_args_list]
-    assert any("config.yaml" in c for c in print_calls)
-    assert any("settings.json" in c for c in print_calls)
+    printed = _all_printed(mock_console)
+    assert "config.yaml" in printed
+    assert "settings.json" in printed
 
 
 @patch("agent.cli.Prompt")

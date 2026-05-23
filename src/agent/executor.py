@@ -49,6 +49,7 @@ class Executor:
         tools: FileTools,
         on_token: Callable[[str], None] | None = None,
         on_reasoning: Callable[[str], None] | None = None,
+        on_tool_call: Callable[[str, dict], None] | None = None,
         mcp: MCPManager | None = None,
         skills: SkillsManager | None = None,
         agents: AgentsManager | None = None,
@@ -58,6 +59,7 @@ class Executor:
         self.system_prompt = _build_system_prompt(skills, agents)
         self.on_token = on_token
         self.on_reasoning = on_reasoning
+        self.on_tool_call = on_tool_call
         self.mcp = mcp
         self.skills = skills
         self.agents = agents
@@ -77,6 +79,7 @@ class Executor:
             skills=self.skills,
             agents=self.agents,
             subagent_runner=self.subagent_runner,
+            on_tool_call=self.on_tool_call,
         )
         user_content = self._build_user_content(step, errors, completed_steps)
         messages = [

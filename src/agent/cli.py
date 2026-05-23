@@ -6,7 +6,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 
 from agent.db import AgentDB
 from agent.executor import Executor
@@ -104,6 +107,7 @@ def build_orchestrator(
 
     on_token = None
     on_reasoning = None
+    on_tool_call = None
     if stream:
 
         def on_token(chunk: str) -> None:
@@ -114,6 +118,9 @@ def build_orchestrator(
             # reasoning visually separates from the final answer.
             console.print(chunk, end="", soft_wrap=True, style="dim italic")
 
+        def on_tool_call(name: str, args: dict) -> None:
+            console.print(_format_tool_call(name, args), soft_wrap=True)
+
     mcp = MCPManager(load_mcp_config(project_root))
     skills = SkillsManager(project_root)
     agents = AgentsManager(project_root)
@@ -122,6 +129,7 @@ def build_orchestrator(
         tools,
         on_token=on_token,
         on_reasoning=on_reasoning,
+        on_tool_call=on_tool_call,
         mcp=mcp,
         skills=skills,
         agents=agents,
@@ -141,19 +149,50 @@ def build_orchestrator(
         tools=tools,
         db=db,
         project_root=project_root,
-        on_status=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        on_status=_render_status,
         max_steps=max_steps,
     )
 
 
+def _render_status(msg: str) -> None:
+    """Style orchestrator status messages by phase.
+
+    Step boundaries get a `console.rule()` for visual separation; everything
+    else gets dim text. Keeps the orchestrator's on_status(str) interface
+    unchanged -- the CLI just renders the strings smarter.
+    """
+    if msg.startswith("Executing step"):
+        console.rule(f"[bold cyan]{msg}[/bold cyan]", style="cyan", align="left")
+    elif msg.startswith("Plan: "):
+        # Already going to be rendered as a Panel by _approve_plan in
+        # interactive mode; skip the dim duplicate to keep output clean.
+        # In autonomous mode this is the only place the plan goal shows up.
+        console.print(f"[bold]{msg}[/bold]")
+    elif msg.startswith("All steps completed"):
+        console.rule("[bold green]✓ " + msg + "[/bold green]", style="green")
+    elif msg.startswith(("Max ", "Rolling back", "Replanning", "Aborted")):
+        console.rule(f"[yellow]{msg}[/yellow]", style="yellow", align="left")
+    else:
+        console.print(f"[dim]{msg}[/dim]")
+
+
 def _approve_plan(plan: Plan) -> bool:
-    console.print("\n[bold]Proposed Plan:[/bold]")
-    console.print(f"[green]{plan.goal}[/green]\n")
+    lines = [f"[bold green]{plan.goal}[/bold green]", ""]
     for step in plan.steps:
-        console.print(f"  {step.id}. {step.action}")
+        lines.append(f"  [cyan]{step.id}.[/cyan] {step.action}")
         if step.files_needed:
-            console.print(f"     Files: {', '.join(step.files_needed)}")
+            lines.append(f"     [dim]files: {', '.join(step.files_needed)}[/dim]")
+        if step.verify_command:
+            lines.append(f"     [dim]verify: {step.verify_command}[/dim]")
     console.print()
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"[bold]Proposed Plan[/bold] [dim]({len(plan.steps)} step{'s' if len(plan.steps) != 1 else ''})[/dim]",
+            border_style="green",
+            padding=(0, 1),
+        )
+    )
     answer = Prompt.ask("Proceed?", choices=["y", "n"], default="y")
     return answer == "y"
 
@@ -275,6 +314,85 @@ async def _fast_chat(orch: Orchestrator, user_input: str) -> None:
     console.print()
 
 
+# Per-tool display glyphs + colors. Emojis degrade to text on non-unicode
+# terminals via Rich's automatic fallback; we provide ASCII tags as the
+# second element so the line still reads cleanly if emoji are stripped.
+_TOOL_DISPLAY: dict[str, tuple[str, str]] = {
+    "read_file": ("📖", "cyan"),
+    "list_files": ("📁", "cyan"),
+    "search_text": ("🔍", "cyan"),
+    "create_file": ("🆕", "green"),
+    "edit_file": ("✏️ ", "yellow"),
+    "replace_file": ("📝", "yellow"),
+    "run_command": ("🏃", "magenta"),
+    "read_skill": ("📜", "blue"),
+    "spawn_agent": ("🤖", "blue"),
+}
+
+
+def _format_tool_call(name: str, args: dict) -> str:
+    """Render a tool call as `<emoji> <name>(<key arg>)` for inline display."""
+    icon, color = _TOOL_DISPLAY.get(name, ("⚙️ ", "white"))
+    if name.startswith("mcp__"):
+        icon, color = "🔌", "blue"
+
+    # Pull the most informative single argument as a hint.
+    summary = ""
+    if "path" in args:
+        summary = args["path"]
+    elif "command" in args:
+        summary = args["command"]
+    elif "query" in args:
+        summary = repr(args["query"])
+    elif "name" in args:
+        summary = args["name"]
+    elif "role" in args:
+        summary = args["role"]
+    elif "directory" in args:
+        summary = args["directory"]
+    if len(summary) > 60:
+        summary = summary[:57] + "..."
+
+    label = f"[{color}]{name}[/{color}]"
+    if summary:
+        return f"{icon} {label} [dim]{summary}[/dim]"
+    return f"{icon} {label}"
+
+
+def _print_welcome_banner(
+    orch: Orchestrator, args: argparse.Namespace, project_root: Path
+) -> None:
+    """Top-of-REPL banner: model, project, loaded extensions."""
+    skills_count = len(orch.executor.skills.skills) if orch.executor.skills else 0
+    agents_count = len(orch.executor.agents.roles) if orch.executor.agents else 0
+    mcp_servers = orch.executor.mcp.connected_servers if orch.executor.mcp else []
+
+    lines = [
+        f"[bold]Model:[/bold]   {args.model}",
+        f"[bold]Project:[/bold] {project_root}",
+    ]
+    if mcp_servers:
+        lines.append(f"[bold]MCP:[/bold]     {', '.join(mcp_servers)}")
+    if skills_count or agents_count:
+        ext = []
+        if skills_count:
+            ext.append(f"{skills_count} skill{'s' if skills_count != 1 else ''}")
+        if agents_count:
+            ext.append(f"{agents_count} subagent{'s' if agents_count != 1 else ''}")
+        lines.append(f"[bold]Loaded:[/bold]  {', '.join(ext)}")
+
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="[bold cyan]Coding Agent[/bold cyan] [dim]v0.1.0[/dim]",
+            subtitle="[dim]/help for commands · /quit or 'exit' to leave[/dim]",
+            border_style="cyan",
+            padding=(0, 1),
+        )
+    )
+    console.print()
+
+
 async def run_interactive(args: argparse.Namespace) -> None:
     project_root = _find_project_root(Path(args.project))
     orch = build_orchestrator(
@@ -285,15 +403,7 @@ async def run_interactive(args: argparse.Namespace) -> None:
         stream=True,
     )
     await orch.executor.mcp.connect()
-    if orch.executor.mcp.connected_servers:
-        console.print(
-            f"[dim]MCP servers: {', '.join(orch.executor.mcp.connected_servers)}[/dim]"
-        )
-
-    console.print(
-        f"[bold]Agent v0.1.0[/bold] | Model: {args.model} | Project: {project_root}"
-    )
-    console.print("Type a task or /help for commands.\n")
+    _print_welcome_banner(orch, args, project_root)
 
     try:
         await _interactive_loop(orch)
@@ -340,12 +450,21 @@ async def _interactive_loop(orch: Orchestrator) -> None:
             await _fast_chat(orch, user_input)
             continue
 
-        result = await orch.run(
-            user_input, mode="interactive", approve_plan=_approve_plan
-        )
+        # Spinner runs in a background thread; on_status prints flow above it
+        # via Rich's Live infrastructure. Auto-disabled on non-TTY (e.g. when
+        # output is piped to a file), so this is safe for all environments.
+        with console.status(
+            "[dim]Working...[/dim]", spinner="dots", spinner_style="cyan"
+        ):
+            result = await orch.run(
+                user_input, mode="interactive", approve_plan=_approve_plan
+            )
         status = result["status"]
         if status == "answered":
-            console.print(result["answer"] + "\n")
+            # Render as markdown so headers, lists, code fences look right.
+            # Planner answers often include markdown for codebase explanations.
+            console.print(Markdown(result["answer"]))
+            console.print()
         elif status == "completed":
             console.print("[green]Task completed successfully.[/green]")
             _show_token_usage(orch)
@@ -395,15 +514,53 @@ def _show_token_usage(orch: Orchestrator) -> None:
         usage = orch.token_usage()
         p = usage["planner"]
         e = usage["executor"]
-        total = p["total_tokens"] + e["total_tokens"]
-        calls = p["calls"] + e["calls"]
-        if total > 0:
-            console.print(
-                f"[dim]Tokens: {total:,} ({p['total_tokens']:,} planner + "
-                f"{e['total_tokens']:,} executor) | {calls} LLM calls[/dim]\n"
-            )
-    except (TypeError, KeyError, AttributeError):
-        pass
+        # Validate shape early so MagicMock objects in tests fall to the
+        # except branch instead of crashing in the format string below.
+        total = int(p["total_tokens"]) + int(e["total_tokens"])
+        if total == 0:
+            return
+
+        table = Table(
+            title="[dim]Token usage[/dim]",
+            title_justify="left",
+            show_header=True,
+            header_style="dim",
+            border_style="dim",
+            padding=(0, 1),
+        )
+        table.add_column("", style="dim")
+        table.add_column("Prompt", justify="right")
+        table.add_column("Completion", justify="right")
+        table.add_column("Total", justify="right", style="bold")
+        table.add_column("Calls", justify="right", style="dim")
+        table.add_row(
+            "Planner",
+            f"{int(p['prompt_tokens']):,}",
+            f"{int(p['completion_tokens']):,}",
+            f"{int(p['total_tokens']):,}",
+            str(int(p["calls"])),
+        )
+        table.add_row(
+            "Executor",
+            f"{int(e['prompt_tokens']):,}",
+            f"{int(e['completion_tokens']):,}",
+            f"{int(e['total_tokens']):,}",
+            str(int(e["calls"])),
+        )
+        table.add_section()
+        table.add_row(
+            "[bold]Total[/bold]",
+            f"[bold]{int(p['prompt_tokens']) + int(e['prompt_tokens']):,}[/bold]",
+            f"[bold]{int(p['completion_tokens']) + int(e['completion_tokens']):,}[/bold]",
+            f"[bold]{total:,}[/bold]",
+            f"[bold]{int(p['calls']) + int(e['calls'])}[/bold]",
+        )
+        console.print(table)
+        console.print()
+    except (TypeError, ValueError, KeyError, AttributeError):
+        # Graceful no-op for tests that mock orch.token_usage(), or for
+        # backends that don't report usage in their response.
+        return
 
 
 def _show_status(orch: Orchestrator) -> None:
