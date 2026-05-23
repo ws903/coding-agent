@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -454,10 +457,49 @@ async def run_interactive(args: argparse.Namespace) -> None:
         await orch.executor.mcp.close()
 
 
+def _build_repl_keybindings() -> KeyBindings:
+    """Key bindings for the main REPL prompt.
+
+    ESC clears the input line (matches Claude Code behavior at the prompt).
+    Ctrl+C raises KeyboardInterrupt so the outer loop can exit cleanly.
+    """
+    kb = KeyBindings()
+
+    @kb.add("escape", eager=True)
+    def _esc_clear(event):
+        event.app.current_buffer.reset()
+
+    @kb.add("c-c")
+    def _ctrl_c(event):
+        event.app.exit(exception=KeyboardInterrupt)
+
+    return kb
+
+
+def _make_prompt_session() -> PromptSession:
+    """Build the REPL PromptSession.
+
+    Replaces Rich's Prompt.ask (which used input() underneath and produced
+    garbled escape sequences for arrow keys, ESC, etc.). prompt_toolkit gives
+    us cross-platform line editing, history within a session, and bindable
+    keys -- including ESC to clear the input line.
+    """
+    return PromptSession(
+        message=HTML("<ansicyan><b>></b></ansicyan> "),
+        key_bindings=_build_repl_keybindings(),
+    )
+
+
+async def _get_user_input(session: PromptSession) -> str:
+    """One-line shim that tests patch instead of mocking PromptSession itself."""
+    return await session.prompt_async()
+
+
 async def _interactive_loop(orch: Orchestrator) -> None:
+    session = _make_prompt_session()
     while True:
         try:
-            user_input = Prompt.ask("[bold cyan]>[/bold cyan]")
+            user_input = await _get_user_input(session)
         except (EOFError, KeyboardInterrupt):
             console.print("\nGoodbye.")
             break
