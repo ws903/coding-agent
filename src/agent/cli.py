@@ -1,7 +1,11 @@
 # src/agent/cli.py
 import argparse
+import contextlib
 import json
 import os
+import sys
+import threading
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -508,6 +512,80 @@ async def _get_user_input() -> str:
     return await _get_session().prompt_async()
 
 
+def _watch_for_esc_unix(
+    orch: Orchestrator, stop_event: threading.Event
+) -> None:  # pragma: no cover -- requires real TTY + termios
+    """Unix watcher: puts stdin in cbreak mode and polls for ESC.
+
+    On ESC (0x1b), calls orch.abort() and exits. Any other key during the
+    task is silently consumed so it doesn't leak into the next prompt.
+    Terminal state is always restored in the finally clause.
+    """
+    import select
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    try:
+        old_settings = termios.tcgetattr(fd)
+    except termios.error:
+        # Not a real TTY (CI, headless) -- nothing to watch.
+        return
+    try:
+        tty.setcbreak(fd)
+        while not stop_event.is_set():
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if not ready:
+                continue
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":
+                orch.abort()
+                console.print("\n[yellow]ESC pressed -- aborting task...[/yellow]")
+                return
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _watch_for_esc_win(
+    orch: Orchestrator, stop_event: threading.Event
+) -> None:  # pragma: no cover -- requires real Windows console
+    """Windows watcher: polls msvcrt.kbhit() for ESC."""
+    import msvcrt
+
+    while not stop_event.is_set():
+        if not msvcrt.kbhit():
+            time.sleep(0.05)
+            continue
+        ch = msvcrt.getch()
+        if ch == b"\x1b":
+            orch.abort()
+            console.print("\n[yellow]ESC pressed -- aborting task...[/yellow]")
+            return
+
+
+@contextlib.contextmanager
+def _esc_aborts(orch: Orchestrator):
+    """Context manager: while active, ESC keypress calls orch.abort().
+
+    No-op when stdin isn't a TTY (CI, piped input). Uses a background daemon
+    thread that polls stdin with a short timeout so we can stop it cleanly on
+    exit. Terminal state is restored by the watcher's own finally clause.
+    """
+    if not sys.stdin.isatty():
+        yield
+        return
+
+    stop_event = threading.Event()
+    target = _watch_for_esc_win if sys.platform == "win32" else _watch_for_esc_unix
+    thread = threading.Thread(target=target, args=(orch, stop_event), daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(timeout=1.0)
+
+
 async def _interactive_loop(orch: Orchestrator) -> None:
     while True:
         try:
@@ -550,12 +628,24 @@ async def _interactive_loop(orch: Orchestrator) -> None:
         # Spinner runs in a background thread; on_status prints flow above it
         # via Rich's Live infrastructure. Auto-disabled on non-TTY (e.g. when
         # output is piped to a file), so this is safe for all environments.
-        with console.status(
-            "[dim]Working...[/dim]", spinner="dots", spinner_style="cyan"
-        ):
-            result = await orch.run(
-                user_input, mode="interactive", approve_plan=_approve_plan
-            )
+        # _esc_aborts wires the ESC key to orch.abort() during the run.
+        try:
+            with (
+                console.status(
+                    "[dim]Working...[/dim]", spinner="dots", spinner_style="cyan"
+                ),
+                _esc_aborts(orch),
+            ):
+                result = await orch.run(
+                    user_input, mode="interactive", approve_plan=_approve_plan
+                )
+        except KeyboardInterrupt:
+            # Ctrl+C during a running task: abort gracefully, stay in the REPL.
+            # Same outcome as ESC; this catches the path where orch.run raises
+            # before orch.abort() is checked.
+            orch.abort()
+            console.print("\n[yellow]Interrupted.[/yellow]")
+            continue
         status = result["status"]
         if status == "answered":
             # Render as markdown so headers, lists, code fences look right.

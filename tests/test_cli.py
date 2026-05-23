@@ -10,6 +10,7 @@ from agent.cli import (
     SLASH_COMMANDS,
     _approve_plan,
     _build_repl_keybindings,
+    _esc_aborts,
     _find_project_root,
     _format_tool_call,
     _llm_classify_intent,
@@ -1097,3 +1098,57 @@ def test_build_repl_keybindings_includes_escape_and_ctrl_c():
 # unit test, and instantiating it on Windows CI hits NoConsoleScreenBufferError
 # because the runner has no attached console. _make_prompt_session is exercised
 # at runtime via _get_session()'s lazy singleton.
+
+
+# --- ESC abort behavior ---
+
+
+def test_esc_aborts_is_noop_when_stdin_not_tty():
+    """No TTY (CI, piped) -> context manager passes through with no watcher."""
+    orch = _mock_orch()
+    with patch("agent.cli.sys.stdin.isatty", return_value=False):
+        with _esc_aborts(orch):
+            pass  # No abort, no thread started.
+    orch.abort.assert_not_called()
+
+
+def test_esc_aborts_starts_and_stops_watcher_thread_on_tty():
+    """When stdin is a TTY, the context manager spawns a daemon watcher."""
+    orch = _mock_orch()
+    with (
+        patch("agent.cli.sys.stdin.isatty", return_value=True),
+        patch("agent.cli.threading.Thread") as mock_thread_class,
+    ):
+        mock_thread = MagicMock()
+        mock_thread_class.return_value = mock_thread
+        with _esc_aborts(orch):
+            mock_thread.start.assert_called_once()
+        mock_thread.join.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("agent.cli._approve_plan")
+@patch("agent.cli.build_orchestrator")
+@patch("agent.cli._get_user_input", new_callable=AsyncMock)
+@patch("agent.cli.console")
+async def test_run_interactive_ctrl_c_during_task_aborts_and_continues(
+    mock_console, mock_input, mock_build, mock_approve
+):
+    """Ctrl+C during orch.run aborts the task and returns to the REPL prompt
+    instead of exiting (the abort path is graceful, not terminal)."""
+    mock_input.side_effect = ["fix it", "/quit"]
+    mock_orch = _mock_orch()
+    # First call raises KeyboardInterrupt (simulating Ctrl+C mid-task).
+    mock_orch.run = AsyncMock(side_effect=KeyboardInterrupt())
+    mock_build.return_value = mock_orch
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+    )
+    await run_interactive(args)
+    # abort() called once via the KeyboardInterrupt handler.
+    mock_orch.abort.assert_called_once()
+    # Loop continued and reached /quit (i.e. didn't exit on the interrupt).
+    assert "Interrupted" in _all_printed(mock_console)
