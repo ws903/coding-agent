@@ -1242,3 +1242,67 @@ def test_esc_aborts_bridge_fires_abort_via_watcher(monkeypatch):
             _t.sleep(0.05)
 
     orch.abort.assert_called_once()
+
+
+# --- Connection-error resilience ---
+
+
+@pytest.mark.asyncio
+@patch("agent.cli.main._approve_plan")
+@patch("agent.cli.main.build_orchestrator")
+@patch("agent.cli.main._get_user_input", new_callable=AsyncMock)
+@patch("agent.cli.console.console")
+async def test_run_interactive_connect_error_does_not_crash_repl(
+    mock_console, mock_input, mock_build, mock_approve
+):
+    """A backend ConnectError during orch.run must be caught: REPL prints a
+    friendly message and continues to the next prompt instead of crashing."""
+    import httpx
+
+    mock_input.side_effect = ["do a thing", "/quit"]
+    mock_orch = _mock_orch()
+    # Make orch.run raise ConnectError as if Tailscale/Ollama were down.
+    mock_orch.run = AsyncMock(
+        side_effect=httpx.ConnectError("All connection attempts failed")
+    )
+    mock_orch.executor.llm.base_url = "http://100.78.164.3:11434/v1"
+    mock_build.return_value = mock_orch
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+    )
+
+    # Should NOT raise. Should reach /quit.
+    await run_interactive(args)
+    printed = _all_printed(mock_console)
+    assert "Could not reach the LLM backend" in printed
+    assert "100.78.164.3" in printed  # URL shown
+
+
+@pytest.mark.asyncio
+@patch("agent.cli.main.build_orchestrator")
+@patch("agent.cli.console.console")
+async def test_run_autonomous_connect_error_returns_1(mock_console, mock_build):
+    """Autonomous mode: ConnectError exits with code 1 and a friendly message
+    instead of crashing with a stack trace."""
+    import httpx
+
+    mock_orch = _mock_orch()
+    mock_orch.run = AsyncMock(
+        side_effect=httpx.ConnectError("All connection attempts failed")
+    )
+    mock_orch.executor.llm.base_url = "http://100.78.164.3:11434/v1"
+    mock_build.return_value = mock_orch
+    args = Namespace(
+        project="/tmp/test",
+        base_url="http://localhost:11434/v1",
+        model="qwen3:14b",
+        max_steps=20,
+        task="Fix the bug",
+    )
+
+    rc = await run_autonomous(args)
+    assert rc == 1
+    assert "Could not reach the LLM backend" in _all_printed(mock_console)

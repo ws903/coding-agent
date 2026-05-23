@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from rich.markdown import Markdown
 
@@ -349,6 +350,20 @@ async def _interactive_loop(orch: Orchestrator) -> None:
             orch.abort()
             _con.console.print("\n[yellow]Interrupted.[/yellow]")
             continue
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
+            # Backend unreachable (Tailscale dropped, Ollama down, host asleep).
+            # Tell the user where we were trying to reach and let them retry
+            # rather than crashing the whole REPL.
+            url = orch.executor.llm.base_url
+            _con.console.print(
+                f"\n[red]Could not reach the LLM backend at[/red] [cyan]{url}[/cyan]"
+            )
+            _con.console.print(
+                f"[dim]{type(exc).__name__}: {exc}[/dim]\n"
+                "[dim]Check that Ollama is running and your network/Tailscale "
+                "connection is up, then try again.[/dim]\n"
+            )
+            continue
         status = result["status"]
         if status == "answered":
             # Render as markdown so headers, lists, code fences look right.
@@ -386,7 +401,15 @@ async def run_autonomous(args: argparse.Namespace) -> int:
         )
 
     try:
-        result = await orch.run(args.task, mode="autonomous")
+        try:
+            result = await orch.run(args.task, mode="autonomous")
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout) as exc:
+            url = orch.executor.llm.base_url
+            _con.console.print(
+                f"[red]Could not reach the LLM backend at[/red] [cyan]{url}[/cyan]"
+            )
+            _con.console.print(f"[dim]{type(exc).__name__}: {exc}[/dim]")
+            return 1
     finally:
         await orch.executor.mcp.close()
 
