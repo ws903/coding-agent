@@ -68,6 +68,10 @@ class Orchestrator:
         self._current_step: str = ""
         self._steps_executed = 0
         self._total_steps = 0
+        # Conversation id of the active run. Initialized here so the cancel
+        # handler in run() can safely read it even if cancellation fires
+        # before _run_inner() got far enough to set it.
+        self._conv_id: str = ""
         # asyncio handles for thread-safe cancellation. Captured in run()
         # so abort() can cancel an in-flight LLM HTTP call mid-await from
         # another thread (e.g. the ESC watcher).
@@ -117,6 +121,11 @@ class Orchestrator:
         mode: str = "autonomous",
         approve_plan: Callable[..., bool] | None = None,
     ) -> dict:
+        # Reset per-run state BEFORE capturing the asyncio handles, so an
+        # abort fired immediately after run() returns to the caller doesn't
+        # see stale conv_id from a previous run.
+        self._conv_id = ""
+        self._aborted = False
         # Capture handles so abort() can cancel an in-flight HTTP call.
         self._run_asyncio_task = asyncio.current_task()
         self._run_loop = asyncio.get_running_loop()
@@ -127,7 +136,10 @@ class Orchestrator:
             # Other cancellations (e.g. supervisor shutdown) must propagate.
             if not self._aborted:
                 raise
-            self.db.update_conversation_status(self._conv_id, "aborted")
+            # _conv_id may be "" if cancellation fired before _run_inner
+            # created the conversation -- skip the DB update in that case.
+            if self._conv_id:
+                self.db.update_conversation_status(self._conv_id, "aborted")
             return {"status": "aborted", "conv_id": self._conv_id}
         finally:
             self._run_asyncio_task = None

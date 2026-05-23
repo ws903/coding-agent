@@ -3,6 +3,7 @@ import argparse
 import contextlib
 import json
 import os
+import select
 import sys
 import threading
 import time
@@ -512,16 +513,40 @@ async def _get_user_input() -> str:
     return await _get_session().prompt_async()
 
 
+def _is_lone_escape_unix(stream, timeout: float = 0.05) -> bool:
+    """After reading 0x1b, return True if it was a standalone ESC press
+    (nothing follows within `timeout`) and False if it was the prefix of
+    an escape sequence (arrow keys, function keys, Alt+X, etc.).
+
+    Escape sequences are transmitted as a burst (`\\x1b[A` for up-arrow,
+    etc.) that arrives within microseconds. A bare ESC keypress is followed
+    by nothing. prompt_toolkit uses the same timeout-based disambiguation
+    via its `Application.ttimeoutlen` setting.
+
+    Any follow-up bytes are drained so they don't leak into the next
+    read or trigger a second match.
+    """
+    follow_ready, _, _ = select.select([stream], [], [], timeout)
+    if not follow_ready:
+        return True
+    # Drain the rest of the sequence (non-blocking; typically 2-3 more bytes).
+    while True:
+        more, _, _ = select.select([stream], [], [], 0)
+        if not more:
+            return False
+        stream.read(1)
+
+
 def _watch_for_esc_unix(
     orch: Orchestrator, stop_event: threading.Event
 ) -> None:  # pragma: no cover -- requires real TTY + termios
     """Unix watcher: puts stdin in cbreak mode and polls for ESC.
 
-    On ESC (0x1b), calls orch.abort() and exits. Any other key during the
-    task is silently consumed so it doesn't leak into the next prompt.
+    On a real ESC keypress (0x1b followed by no other bytes within the
+    disambiguation window), calls orch.abort() and exits. Multi-byte
+    escape sequences (arrow keys, Alt-combos) are silently drained.
     Terminal state is always restored in the finally clause.
     """
-    import select
     import termios
     import tty
 
@@ -538,7 +563,7 @@ def _watch_for_esc_unix(
             if not ready:
                 continue
             ch = sys.stdin.read(1)
-            if ch == "\x1b":
+            if ch == "\x1b" and _is_lone_escape_unix(sys.stdin):
                 orch.abort()
                 console.print("\n[yellow]ESC pressed -- aborting task...[/yellow]")
                 return

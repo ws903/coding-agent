@@ -12,6 +12,7 @@ from agent.cli import (
     _build_repl_keybindings,
     _esc_aborts,
     _find_project_root,
+    _is_lone_escape_unix,
     _format_tool_call,
     _llm_classify_intent,
     _looks_like_chat,
@@ -1152,3 +1153,47 @@ async def test_run_interactive_ctrl_c_during_task_aborts_and_continues(
     mock_orch.abort.assert_called_once()
     # Loop continued and reached /quit (i.e. didn't exit on the interrupt).
     assert "Interrupted" in _all_printed(mock_console)
+
+
+# --- ESC vs escape sequence disambiguation ---
+
+
+def test_is_lone_escape_returns_true_when_no_follow_up():
+    """Bare ESC press: select returns no data within the timeout window."""
+    with patch("agent.cli.select.select", return_value=([], [], [])):
+        stream = MagicMock()
+        assert _is_lone_escape_unix(stream, timeout=0.001) is True
+
+
+def test_is_lone_escape_returns_false_for_arrow_key():
+    """Arrow key: \\x1b[A. The leading \\x1b was already consumed; this
+    helper sees [ and A follow. Should return False and drain both bytes."""
+    stream = MagicMock()
+    stream.read.side_effect = ["[", "A"]
+    with patch(
+        "agent.cli.select.select",
+        side_effect=[
+            ([stream], [], []),  # First peek: follow byte ready
+            ([stream], [], []),  # Drain iter 1: '[' ready
+            ([stream], [], []),  # Drain iter 2: 'A' ready
+            ([], [], []),  # Drain done
+        ],
+    ):
+        assert _is_lone_escape_unix(stream, timeout=0.001) is False
+    assert stream.read.call_count == 2
+
+
+def test_is_lone_escape_returns_false_for_alt_combo():
+    """Alt+f sends \\x1b f. Single follow-up byte, should drain it."""
+    stream = MagicMock()
+    stream.read.side_effect = ["f"]
+    with patch(
+        "agent.cli.select.select",
+        side_effect=[
+            ([stream], [], []),  # Follow byte ready
+            ([stream], [], []),  # Drain iter 1: 'f' ready
+            ([], [], []),  # Drain done
+        ],
+    ):
+        assert _is_lone_escape_unix(stream, timeout=0.001) is False
+    assert stream.read.call_count == 1
