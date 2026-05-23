@@ -13,10 +13,15 @@ from agent.cli import (
     _format_tool_call,
     _llm_classify_intent,
     _looks_like_chat,
+    _print_welcome_banner,
     _render_edit_diff,
+    _render_status,
     _route_input,
+    _show_change_summary,
     _show_config,
     _show_history,
+    _show_status,
+    _show_token_usage,
     build_orchestrator,
     parse_args,
     run_autonomous,
@@ -37,19 +42,28 @@ def _mock_orch() -> MagicMock:
 
 
 def _all_printed(mock_console) -> str:
-    """Flatten everything printed (including Panel/Markdown contents) for
-    substring search in tests. Walks .renderable on Rich renderables so
-    Panel-wrapped text is still discoverable."""
+    """Flatten everything printed (including Panel/Markdown/Tree contents)
+    for substring search in tests. Walks .renderable on Panel-style wrappers
+    and .label/.children on Tree."""
+
+    def _walk(obj) -> list[str]:
+        # Tree: walk root label + children recursively.
+        if hasattr(obj, "label") and hasattr(obj, "children"):
+            out = [str(obj.label)]
+            for child in obj.children:
+                out.extend(_walk(child))
+            return out
+        # Panel/Markdown: surface inner renderable text.
+        renderable = getattr(obj, "renderable", None)
+        if renderable is not None:
+            return [str(renderable)]
+        return [str(obj)]
+
     parts: list[str] = []
     for call in mock_console.print.call_args_list:
         if not call.args:
             continue
-        first = call.args[0]
-        renderable = getattr(first, "renderable", None)
-        if renderable is not None:
-            parts.append(str(renderable))
-        else:
-            parts.append(str(first))
+        parts.extend(_walk(call.args[0]))
     return "\n".join(parts)
 
 
@@ -838,3 +852,224 @@ def test_build_orchestrator_verify_commands_passed(tmp_path):
     )
     assert orch.verifier.commands == ["mypy ."]
     orch.db.close()
+
+
+# --- Visual rendering helpers (coverage targeted) ---
+
+
+@patch("agent.cli.console")
+def test_render_status_executing_step_uses_rule(mock_console):
+    _render_status("Executing step 1 [1/3]: do the thing")
+    mock_console.rule.assert_called_once()
+
+
+@patch("agent.cli.console")
+def test_render_status_plan_message_uses_print(mock_console):
+    _render_status("Plan: Add docstrings (3 steps)")
+    mock_console.print.assert_called_once()
+
+
+@patch("agent.cli.console")
+def test_render_status_completion_uses_green_rule(mock_console):
+    _render_status("All steps completed successfully.")
+    args, kwargs = mock_console.rule.call_args
+    assert "green" in str(kwargs.get("style", ""))
+
+
+@patch("agent.cli.console")
+def test_render_status_warnings_use_yellow_rule(mock_console):
+    for msg in [
+        "Max replans reached. Stopping.",
+        "Rolling back failed step...",
+        "Replanning (attempt 1/3)...",
+        "Aborted by user.",
+    ]:
+        mock_console.reset_mock()
+        _render_status(msg)
+        args, kwargs = mock_console.rule.call_args
+        assert "yellow" in str(kwargs.get("style", ""))
+
+
+@patch("agent.cli.console")
+def test_render_status_default_is_dim_print(mock_console):
+    _render_status("something else entirely")
+    mock_console.print.assert_called_once()
+    assert mock_console.rule.call_count == 0
+
+
+# --- _print_welcome_banner ---
+
+
+@patch("agent.cli.console")
+def test_print_welcome_banner_basic(mock_console):
+    orch = _mock_orch()
+    args = Namespace(model="qwen3.6:35b")
+    _print_welcome_banner(orch, args, __import__("pathlib").Path("/tmp/proj"))
+    printed = _all_printed(mock_console)
+    assert "qwen3.6:35b" in printed
+    assert "/tmp/proj" in printed
+
+
+@patch("agent.cli.console")
+def test_print_welcome_banner_with_mcp_and_skills(mock_console):
+    orch = _mock_orch()
+    orch.executor.skills.skills = ["skill-a", "skill-b"]
+    orch.executor.agents.roles = ["reviewer"]
+    orch.executor.mcp.connected_servers = ["filesystem"]
+    args = Namespace(model="qwen3.6:35b")
+    _print_welcome_banner(orch, args, __import__("pathlib").Path("/tmp/proj"))
+    printed = _all_printed(mock_console)
+    assert "filesystem" in printed
+    assert "2 skills" in printed
+    assert "1 subagent" in printed
+
+
+# --- _show_change_summary ---
+
+
+@patch("agent.cli.console")
+def test_show_change_summary_no_conv_id_prints_done(mock_console):
+    orch = _mock_orch()
+    _show_change_summary(orch, "")
+    mock_console.print.assert_called_once()
+    assert "completed successfully" in _all_printed(mock_console)
+
+
+@patch("agent.cli.console")
+def test_show_change_summary_empty_edits_prints_done(mock_console):
+    orch = _mock_orch()
+    orch.db.get_edits = MagicMock(return_value=[])
+    _show_change_summary(orch, "c1")
+    assert "completed successfully" in _all_printed(mock_console)
+
+
+@patch("agent.cli.console")
+def test_show_change_summary_renders_tree_with_deltas(mock_console):
+    orch = _mock_orch()
+    orch.db.get_edits = MagicMock(
+        return_value=[
+            {
+                "file_path": "foo.py",
+                "edit_type": "search_replace",
+                "before": "def f():\n    pass\n",
+                "after": 'def f():\n    """hi"""\n    pass\n',
+            }
+        ]
+    )
+    _show_change_summary(orch, "c1")
+    printed = _all_printed(mock_console)
+    assert "Task complete" in printed
+    assert "foo.py" in printed
+
+
+@patch("agent.cli.console")
+def test_show_change_summary_created_file(mock_console):
+    orch = _mock_orch()
+    orch.db.get_edits = MagicMock(
+        return_value=[
+            {
+                "file_path": "new.py",
+                "edit_type": "create",
+                "before": None,
+                "after": "x = 1\n",
+            }
+        ]
+    )
+    _show_change_summary(orch, "c1")
+    assert "new.py" in _all_printed(mock_console)
+
+
+@patch("agent.cli.console")
+def test_show_change_summary_db_failure_falls_back(mock_console):
+    orch = _mock_orch()
+    orch.db.get_edits = MagicMock(side_effect=AttributeError("boom"))
+    _show_change_summary(orch, "c1")
+    assert "completed successfully" in _all_printed(mock_console)
+
+
+# --- _show_status ---
+
+
+@patch("agent.cli.console")
+def test_show_status_with_no_task(mock_console):
+    orch = _mock_orch()
+    orch.status = MagicMock(
+        return_value={
+            "task": "",
+            "current_step": "",
+            "steps_executed": 0,
+            "total_steps": 0,
+            "aborted": False,
+        }
+    )
+    _show_status(orch)
+    assert "No task running" in _all_printed(mock_console)
+
+
+@patch("agent.cli.console")
+def test_show_status_with_active_task(mock_console):
+    orch = _mock_orch()
+    orch.status = MagicMock(
+        return_value={
+            "task": "Refactor X",
+            "current_step": "Step 2: Y",
+            "steps_executed": 1,
+            "total_steps": 3,
+            "aborted": False,
+        }
+    )
+    _show_status(orch)
+    printed = _all_printed(mock_console)
+    assert "Refactor X" in printed
+    assert "Step 2: Y" in printed
+    assert "1/3" in printed
+
+
+# --- _show_token_usage table rendering ---
+
+
+@patch("agent.cli.console")
+def test_show_token_usage_renders_table_with_real_numbers(mock_console):
+    orch = _mock_orch()
+    orch.token_usage = MagicMock(
+        return_value={
+            "planner": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "calls": 1,
+            },
+            "executor": {
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "total_tokens": 280,
+                "calls": 5,
+            },
+        }
+    )
+    _show_token_usage(orch)
+    # First call is the Table renderable, second is a blank line.
+    assert mock_console.print.call_count >= 1
+
+
+@patch("agent.cli.console")
+def test_show_token_usage_skips_when_zero(mock_console):
+    orch = _mock_orch()
+    orch.token_usage = MagicMock(
+        return_value={
+            "planner": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "calls": 0,
+            },
+            "executor": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "calls": 0,
+            },
+        }
+    )
+    _show_token_usage(orch)
+    mock_console.print.assert_not_called()
