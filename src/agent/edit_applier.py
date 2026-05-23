@@ -11,6 +11,7 @@ persist a before/after audit row for each.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,10 +26,21 @@ logger = logging.getLogger(__name__)
 class EditApplier:
     """Applies file edits with lint gating and DB audit logging."""
 
-    def __init__(self, tools: FileTools, lint: LintGate, db: AgentDB):
+    def __init__(
+        self,
+        tools: FileTools,
+        lint: LintGate,
+        db: AgentDB,
+        on_edit_applied: Callable[[str, str, str | None, str | None], None]
+        | None = None,
+    ):
         self.tools = tools
         self.lint = lint
         self.db = db
+        # Fires once per successfully applied edit so the CLI can render a
+        # diff. Signature: (path, action, raw_before_text, raw_after_text).
+        # Display callback must never break the apply path; we trap broadly.
+        self.on_edit_applied = on_edit_applied
 
     def apply(self, conv_id: str, step_id: int, result: ExecutionResult) -> bool:
         """Apply every edit in `result`. Returns True iff all succeeded.
@@ -71,6 +83,13 @@ class EditApplier:
         self.db.save_edit(
             conv_id, step_id, edit.path, edit.action, before=before, after=after
         )
+        if self.on_edit_applied is not None:
+            try:
+                self.on_edit_applied(
+                    edit.path, edit.action, raw_before, self._read_raw(edit.path)
+                )
+            except Exception:  # noqa: BLE001 -- never break the apply path on display failure
+                logger.exception("on_edit_applied callback raised")
         return True
 
     def _write_edit(self, edit: FileEdit, raw_before: str | None) -> str | None | bool:

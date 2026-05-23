@@ -13,6 +13,7 @@ from agent.cli import (
     _format_tool_call,
     _llm_classify_intent,
     _looks_like_chat,
+    _render_edit_diff,
     _route_input,
     _show_config,
     _show_history,
@@ -185,6 +186,46 @@ def test_format_tool_call_mcp_tool_uses_plug_icon():
     out = _format_tool_call("mcp__filesystem__read", {"path": "/tmp/x"})
     assert "mcp__filesystem__read" in out
     assert "/tmp/x" in out
+
+
+# --- diff rendering ---
+
+
+@patch("agent.cli.console")
+def test_render_edit_diff_prints_syntax_block(mock_console):
+    """A non-empty edit produces a Syntax-rendered diff."""
+    _render_edit_diff(
+        "foo.py",
+        "search_replace",
+        "def hello():\n    pass\n",
+        'def hello():\n    """Say hi."""\n    pass\n',
+    )
+    # console.print should fire exactly once with a Syntax renderable.
+    assert mock_console.print.call_count == 1
+    arg = mock_console.print.call_args.args[0]
+    # Rich Syntax has a `.code` attribute holding the source string.
+    code = getattr(arg, "code", "")
+    assert "+    " in code  # the new docstring line
+    assert "foo.py" in code  # filename header
+
+
+@patch("agent.cli.console")
+def test_render_edit_diff_skips_no_change(mock_console):
+    """If before == after, nothing is printed."""
+    text = "def hello():\n    pass\n"
+    _render_edit_diff("foo.py", "search_replace", text, text)
+    mock_console.print.assert_not_called()
+
+
+@patch("agent.cli.console")
+def test_render_edit_diff_truncates_huge_diffs(mock_console):
+    """Diffs longer than _MAX_DIFF_LINES are truncated with a marker."""
+    before = "\n".join(f"line {i}" for i in range(100))
+    after = "\n".join(f"changed {i}" for i in range(100))
+    _render_edit_diff("big.py", "rewrite", before, after)
+    arg = mock_console.print.call_args.args[0]
+    code = getattr(arg, "code", "")
+    assert "truncated" in code
 
 
 def test_format_tool_call_truncates_long_paths():
@@ -578,8 +619,8 @@ async def test_run_interactive_task_completed(
     mock_orch.run.assert_called_once_with(
         "Fix the bug", mode="interactive", approve_plan=mock_approve
     )
-    print_calls = [str(c) for c in mock_console.print.call_args_list]
-    assert any("completed successfully" in c for c in print_calls)
+    # Completion indicator now lives inside a Rich Tree root label.
+    assert "Task complete" in _all_printed(mock_console)
 
 
 @pytest.mark.asyncio
@@ -706,8 +747,8 @@ async def test_run_autonomous_completed(mock_console, mock_build):
     result = await run_autonomous(args)
     assert result == 0
     mock_orch.run.assert_called_once_with("Fix bug", mode="autonomous")
-    print_calls = [str(c) for c in mock_console.print.call_args_list]
-    assert any("completed successfully" in c for c in print_calls)
+    # Completion indicator now lives inside a Rich Tree root label.
+    assert "Task complete" in _all_printed(mock_console)
 
 
 @pytest.mark.asyncio

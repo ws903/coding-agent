@@ -42,6 +42,8 @@ class Orchestrator:
         db: AgentDB,
         project_root: Path,
         on_status: Callable[[str], None] | None = None,
+        on_edit_applied: Callable[[str, str, str | None, str | None], None]
+        | None = None,
         git_ops: GitOps | None = None,
         lint_gate: LintGate | None = None,
         max_steps: int = 20,
@@ -57,7 +59,9 @@ class Orchestrator:
         self.lint = lint_gate or LintGate(project_root)
         self.max_steps = max_steps
         self.env = EnvironmentDetector(project_root)
-        self.edit_applier = EditApplier(tools, self.lint, db)
+        self.edit_applier = EditApplier(
+            tools, self.lint, db, on_edit_applied=on_edit_applied
+        )
         self._aborted = False
         self._current_task: str = ""
         self._current_step: str = ""
@@ -158,7 +162,11 @@ class Orchestrator:
 
             step = plan.steps[step_index]
             self._current_step = f"Step {step.id}: {step.action}"
-            self.on_status(f"Executing step {step.id}: {step.action}")
+            # Embed progress [N/total] for the CLI's status renderer to surface.
+            self.on_status(
+                f"Executing step {step.id} "
+                f"[{step_index + 1}/{len(plan.steps)}]: {step.action}"
+            )
 
             snapshot_sha = self._snapshot(f"agent: before step {step.id}")
             success = await self._execute_step(conv_id, step, completed_steps)
