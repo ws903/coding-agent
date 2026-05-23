@@ -46,20 +46,32 @@ def _mock_orch() -> MagicMock:
 
 def _all_printed(mock_console) -> str:
     """Flatten everything printed (including Panel/Markdown/Tree contents)
-    for substring search in tests. Walks .renderable on Panel-style wrappers
-    and .label/.children on Tree."""
+    for substring search in tests.
+
+    Uses isinstance checks against Rich's public classes rather than
+    duck-typing on `.label`/`.children` -- duck-typing is fragile to
+    future Rich refactors where new renderables might happen to expose
+    the same attribute names.
+    """
+    from rich.panel import Panel
+    from rich.tree import Tree
 
     def _walk(obj) -> list[str]:
-        # Tree: walk root label + children recursively.
-        if hasattr(obj, "label") and hasattr(obj, "children"):
+        if isinstance(obj, Tree):
             out = [str(obj.label)]
             for child in obj.children:
                 out.extend(_walk(child))
             return out
-        # Panel/Markdown: surface inner renderable text.
+        if isinstance(obj, Panel):
+            return [str(obj.renderable)]
+        # Markdown and other renderables also expose `.renderable` /
+        # `.markup`; surface either if present, otherwise stringify.
         renderable = getattr(obj, "renderable", None)
         if renderable is not None:
             return [str(renderable)]
+        markup = getattr(obj, "markup", None)
+        if markup is not None:
+            return [str(markup)]
         return [str(obj)]
 
     parts: list[str] = []
@@ -208,7 +220,7 @@ def test_format_tool_call_mcp_tool_uses_plug_icon():
 # --- diff rendering ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_edit_diff_prints_syntax_block(mock_console):
     """A non-empty edit produces a Syntax-rendered diff."""
     _render_edit_diff(
@@ -226,7 +238,7 @@ def test_render_edit_diff_prints_syntax_block(mock_console):
     assert "foo.py" in code  # filename header
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_edit_diff_skips_no_change(mock_console):
     """If before == after, nothing is printed."""
     text = "def hello():\n    pass\n"
@@ -234,7 +246,7 @@ def test_render_edit_diff_skips_no_change(mock_console):
     mock_console.print.assert_not_called()
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_edit_diff_truncates_huge_diffs(mock_console):
     """Diffs longer than _MAX_DIFF_LINES are truncated with a marker."""
     before = "\n".join(f"line {i}" for i in range(100))
@@ -303,8 +315,8 @@ def test_build_orchestrator(tmp_path):
 # --- _approve_plan tests ---
 
 
-@patch("agent.cli.Prompt")
-@patch("agent.cli.console")
+@patch("agent.cli_ui.Prompt")
+@patch("agent.console.console")
 def test_approve_plan_accepted(mock_console, mock_prompt):
     mock_prompt.ask.return_value = "y"
     plan = Plan(
@@ -321,8 +333,8 @@ def test_approve_plan_accepted(mock_console, mock_prompt):
     assert "Refactor module" in _all_printed(mock_console)
 
 
-@patch("agent.cli.Prompt")
-@patch("agent.cli.console")
+@patch("agent.cli_ui.Prompt")
+@patch("agent.console.console")
 def test_approve_plan_rejected(mock_console, mock_prompt):
     mock_prompt.ask.return_value = "n"
     plan = Plan(
@@ -333,8 +345,8 @@ def test_approve_plan_rejected(mock_console, mock_prompt):
     assert result is False
 
 
-@patch("agent.cli.Prompt")
-@patch("agent.cli.console")
+@patch("agent.cli_ui.Prompt")
+@patch("agent.console.console")
 def test_approve_plan_displays_files(mock_console, mock_prompt):
     mock_prompt.ask.return_value = "y"
     plan = Plan(
@@ -353,8 +365,8 @@ def test_approve_plan_displays_files(mock_console, mock_prompt):
     assert "settings.json" in printed
 
 
-@patch("agent.cli.Prompt")
-@patch("agent.cli.console")
+@patch("agent.cli_ui.Prompt")
+@patch("agent.console.console")
 def test_approve_plan_step_without_files(mock_console, mock_prompt):
     mock_prompt.ask.return_value = "y"
     plan = Plan(
@@ -370,7 +382,7 @@ def test_approve_plan_step_without_files(mock_console, mock_prompt):
 # --- _show_config tests ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_config(mock_console):
     mock_db = MagicMock()
     mock_db.get_config.return_value = "(not set)"
@@ -385,7 +397,7 @@ def test_show_config(mock_console):
     mock_db.get_config.assert_any_call("verify_commands", "(not set)")
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_config_with_values(mock_console):
     mock_db = MagicMock()
     mock_db.get_config.side_effect = lambda key, default: {
@@ -405,7 +417,7 @@ def test_show_config_with_values(mock_console):
 # --- _show_history tests ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_history_empty(mock_console):
     mock_cursor = MagicMock()
     mock_cursor.fetchall.return_value = []
@@ -417,7 +429,7 @@ def test_show_history_empty(mock_console):
     mock_console.print.assert_called_once_with("No conversation history.")
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_history_with_rows(mock_console):
     rows = [
         {
@@ -456,7 +468,7 @@ def test_show_history_with_rows(mock_console):
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_quit(mock_console, mock_input, mock_build):
     mock_input.return_value = "/quit"
     args = Namespace(
@@ -476,7 +488,7 @@ async def test_run_interactive_quit(mock_console, mock_input, mock_build):
 )
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_bare_word_exit(
     mock_console, mock_input, mock_build, exit_word
 ):
@@ -498,7 +510,7 @@ async def test_run_interactive_bare_word_exit(
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_exit_phrase_still_plans(
     mock_console, mock_input, mock_build
 ):
@@ -520,7 +532,7 @@ async def test_run_interactive_exit_phrase_still_plans(
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_help(mock_console, mock_input, mock_build):
     mock_input.side_effect = ["/help", "/quit"]
     args = Namespace(
@@ -541,7 +553,7 @@ async def test_run_interactive_help(mock_console, mock_input, mock_build):
 @patch("agent.cli._show_config")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_config(
     mock_console, mock_input, mock_build, mock_show_config
 ):
@@ -562,7 +574,7 @@ async def test_run_interactive_config(
 @patch("agent.cli._show_history")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_history(
     mock_console, mock_input, mock_build, mock_show_history
 ):
@@ -582,7 +594,7 @@ async def test_run_interactive_history(
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_unknown_command(mock_console, mock_input, mock_build):
     mock_input.side_effect = ["/foobar", "/quit"]
     args = Namespace(
@@ -600,7 +612,7 @@ async def test_run_interactive_unknown_command(mock_console, mock_input, mock_bu
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_empty_input(mock_console, mock_input, mock_build):
     mock_input.side_effect = ["", "   ", "/quit"]
     args = Namespace(
@@ -618,7 +630,7 @@ async def test_run_interactive_empty_input(mock_console, mock_input, mock_build)
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_task_completed(
     mock_console, mock_input, mock_build, mock_approve
 ):
@@ -644,7 +656,7 @@ async def test_run_interactive_task_completed(
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_task_failed(
     mock_console, mock_input, mock_build, mock_approve
 ):
@@ -669,7 +681,7 @@ async def test_run_interactive_task_failed(
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_task_aborted(
     mock_console, mock_input, mock_build, mock_approve
 ):
@@ -691,7 +703,7 @@ async def test_run_interactive_task_aborted(
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_eof(mock_console, mock_input, mock_build):
     mock_input.side_effect = EOFError()
     args = Namespace(
@@ -709,7 +721,7 @@ async def test_run_interactive_eof(mock_console, mock_input, mock_build):
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_keyboard_interrupt(mock_console, mock_input, mock_build):
     mock_input.side_effect = KeyboardInterrupt()
     args = Namespace(
@@ -729,7 +741,7 @@ async def test_run_interactive_keyboard_interrupt(mock_console, mock_input, mock
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_autonomous_no_task(mock_console, mock_build):
     args = Namespace(
         project="/tmp/test",
@@ -747,7 +759,7 @@ async def test_run_autonomous_no_task(mock_console, mock_build):
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_autonomous_completed(mock_console, mock_build):
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "completed"})
@@ -768,7 +780,7 @@ async def test_run_autonomous_completed(mock_console, mock_build):
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_autonomous_failed(mock_console, mock_build):
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "failed", "reason": "timeout"})
@@ -788,7 +800,7 @@ async def test_run_autonomous_failed(mock_console, mock_build):
 
 @pytest.mark.asyncio
 @patch("agent.cli.build_orchestrator")
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_autonomous_failed_no_reason(mock_console, mock_build):
     mock_orch = _mock_orch()
     mock_orch.run = AsyncMock(return_value={"status": "failed"})
@@ -858,26 +870,26 @@ def test_build_orchestrator_verify_commands_passed(tmp_path):
 # --- Visual rendering helpers (coverage targeted) ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_status_executing_step_uses_rule(mock_console):
     _render_status("Executing step 1 [1/3]: do the thing")
     mock_console.rule.assert_called_once()
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_status_plan_message_uses_print(mock_console):
     _render_status("Plan: Add docstrings (3 steps)")
     mock_console.print.assert_called_once()
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_status_completion_uses_green_rule(mock_console):
     _render_status("All steps completed successfully.")
     args, kwargs = mock_console.rule.call_args
     assert "green" in str(kwargs.get("style", ""))
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_status_warnings_use_yellow_rule(mock_console):
     for msg in [
         "Max replans reached. Stopping.",
@@ -891,7 +903,7 @@ def test_render_status_warnings_use_yellow_rule(mock_console):
         assert "yellow" in str(kwargs.get("style", ""))
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_render_status_default_is_dim_print(mock_console):
     _render_status("something else entirely")
     mock_console.print.assert_called_once()
@@ -901,7 +913,7 @@ def test_render_status_default_is_dim_print(mock_console):
 # --- _print_welcome_banner ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_print_welcome_banner_basic(mock_console, tmp_path):
     orch = _mock_orch()
     args = Namespace(model="qwen3.6:35b")
@@ -913,7 +925,7 @@ def test_print_welcome_banner_basic(mock_console, tmp_path):
     assert str(tmp_path) in printed
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_print_welcome_banner_with_mcp_and_skills(mock_console, tmp_path):
     orch = _mock_orch()
     orch.executor.skills.skills = ["skill-a", "skill-b"]
@@ -930,7 +942,7 @@ def test_print_welcome_banner_with_mcp_and_skills(mock_console, tmp_path):
 # --- _show_change_summary ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_change_summary_no_conv_id_prints_done(mock_console):
     orch = _mock_orch()
     _show_change_summary(orch, "")
@@ -938,7 +950,7 @@ def test_show_change_summary_no_conv_id_prints_done(mock_console):
     assert "completed successfully" in _all_printed(mock_console)
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_change_summary_empty_edits_prints_done(mock_console):
     orch = _mock_orch()
     orch.db.get_edits = MagicMock(return_value=[])
@@ -946,7 +958,7 @@ def test_show_change_summary_empty_edits_prints_done(mock_console):
     assert "completed successfully" in _all_printed(mock_console)
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_change_summary_renders_tree_with_deltas(mock_console):
     orch = _mock_orch()
     orch.db.get_edits = MagicMock(
@@ -965,7 +977,7 @@ def test_show_change_summary_renders_tree_with_deltas(mock_console):
     assert "foo.py" in printed
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_change_summary_created_file(mock_console):
     orch = _mock_orch()
     orch.db.get_edits = MagicMock(
@@ -982,7 +994,7 @@ def test_show_change_summary_created_file(mock_console):
     assert "new.py" in _all_printed(mock_console)
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_change_summary_db_failure_falls_back(mock_console):
     orch = _mock_orch()
     orch.db.get_edits = MagicMock(side_effect=AttributeError("boom"))
@@ -993,7 +1005,7 @@ def test_show_change_summary_db_failure_falls_back(mock_console):
 # --- _show_status ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_status_with_no_task(mock_console):
     orch = _mock_orch()
     orch.status = MagicMock(
@@ -1009,7 +1021,7 @@ def test_show_status_with_no_task(mock_console):
     assert "No task running" in _all_printed(mock_console)
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_status_with_active_task(mock_console):
     orch = _mock_orch()
     orch.status = MagicMock(
@@ -1031,7 +1043,7 @@ def test_show_status_with_active_task(mock_console):
 # --- _show_token_usage table rendering ---
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_token_usage_renders_table_with_real_numbers(mock_console):
     orch = _mock_orch()
     orch.token_usage = MagicMock(
@@ -1055,7 +1067,7 @@ def test_show_token_usage_renders_table_with_real_numbers(mock_console):
     assert mock_console.print.call_count >= 1
 
 
-@patch("agent.cli.console")
+@patch("agent.console.console")
 def test_show_token_usage_skips_when_zero(mock_console):
     orch = _mock_orch()
     orch.token_usage = MagicMock(
@@ -1107,7 +1119,7 @@ def test_build_repl_keybindings_includes_escape_and_ctrl_c():
 def test_esc_aborts_is_noop_when_stdin_not_tty():
     """No TTY (CI, piped) -> context manager passes through with no watcher."""
     orch = _mock_orch()
-    with patch("agent.cli.sys.stdin.isatty", return_value=False):
+    with patch("agent.cli_input.sys.stdin.isatty", return_value=False):
         with _esc_aborts(orch):
             pass  # No abort, no thread started.
     orch.abort.assert_not_called()
@@ -1117,8 +1129,8 @@ def test_esc_aborts_starts_and_stops_watcher_thread_on_tty():
     """When stdin is a TTY, the context manager spawns a daemon watcher."""
     orch = _mock_orch()
     with (
-        patch("agent.cli.sys.stdin.isatty", return_value=True),
-        patch("agent.cli.threading.Thread") as mock_thread_class,
+        patch("agent.cli_input.sys.stdin.isatty", return_value=True),
+        patch("agent.cli_input.threading.Thread") as mock_thread_class,
     ):
         mock_thread = MagicMock()
         mock_thread_class.return_value = mock_thread
@@ -1131,7 +1143,7 @@ def test_esc_aborts_starts_and_stops_watcher_thread_on_tty():
 @patch("agent.cli._approve_plan")
 @patch("agent.cli.build_orchestrator")
 @patch("agent.cli._get_user_input", new_callable=AsyncMock)
-@patch("agent.cli.console")
+@patch("agent.console.console")
 async def test_run_interactive_ctrl_c_during_task_aborts_and_continues(
     mock_console, mock_input, mock_build, mock_approve
 ):
@@ -1160,7 +1172,7 @@ async def test_run_interactive_ctrl_c_during_task_aborts_and_continues(
 
 def test_is_lone_escape_returns_true_when_no_follow_up():
     """Bare ESC press: select returns no data within the timeout window."""
-    with patch("agent.cli.select.select", return_value=([], [], [])):
+    with patch("agent.cli_input.select.select", return_value=([], [], [])):
         stream = MagicMock()
         assert _is_lone_escape_unix(stream, timeout=0.001) is True
 
@@ -1171,7 +1183,7 @@ def test_is_lone_escape_returns_false_for_arrow_key():
     stream = MagicMock()
     stream.read.side_effect = ["[", "A"]
     with patch(
-        "agent.cli.select.select",
+        "agent.cli_input.select.select",
         side_effect=[
             ([stream], [], []),  # First peek: follow byte ready
             ([stream], [], []),  # Drain iter 1: '[' ready
@@ -1188,7 +1200,7 @@ def test_is_lone_escape_returns_false_for_alt_combo():
     stream = MagicMock()
     stream.read.side_effect = ["f"]
     with patch(
-        "agent.cli.select.select",
+        "agent.cli_input.select.select",
         side_effect=[
             ([stream], [], []),  # Follow byte ready
             ([stream], [], []),  # Drain iter 1: 'f' ready
@@ -1217,10 +1229,12 @@ def test_esc_aborts_bridge_fires_abort_via_watcher(monkeypatch):
         # Simulate "user pressed ESC" -- immediately call abort.
         orch.abort()
 
-    monkeypatch.setattr("agent.cli._watch_for_esc_unix", _fake_watch)
-    monkeypatch.setattr("agent.cli._watch_for_esc_win", _fake_watch)
+    # _esc_aborts lives in cli_input and looks up these names locally there,
+    # so the re-exports in agent.cli aren't what it sees.
+    monkeypatch.setattr("agent.cli_input._watch_for_esc_unix", _fake_watch)
+    monkeypatch.setattr("agent.cli_input._watch_for_esc_win", _fake_watch)
 
-    with patch("agent.cli.sys.stdin.isatty", return_value=True):
+    with patch("agent.cli_input.sys.stdin.isatty", return_value=True):
         with _esc_aborts(orch):
             # Yield long enough for the daemon thread to run _fake_watch.
             import time as _t
