@@ -490,16 +490,28 @@ def _make_prompt_session() -> PromptSession:
     )
 
 
-async def _get_user_input(session: PromptSession) -> str:
+_PROMPT_SESSION: PromptSession | None = None
+
+
+def _get_session() -> PromptSession:
+    """Lazy singleton. Avoids constructing a PromptSession at import or loop
+    entry, which triggers Windows-console probing that fails in headless CI.
+    Tests mock `_get_user_input` so this never runs in unit tests."""
+    global _PROMPT_SESSION
+    if _PROMPT_SESSION is None:
+        _PROMPT_SESSION = _make_prompt_session()
+    return _PROMPT_SESSION
+
+
+async def _get_user_input() -> str:
     """One-line shim that tests patch instead of mocking PromptSession itself."""
-    return await session.prompt_async()
+    return await _get_session().prompt_async()
 
 
 async def _interactive_loop(orch: Orchestrator) -> None:
-    session = _make_prompt_session()
     while True:
         try:
-            user_input = await _get_user_input(session)
+            user_input = await _get_user_input()
         except (EOFError, KeyboardInterrupt):
             console.print("\nGoodbye.")
             break
